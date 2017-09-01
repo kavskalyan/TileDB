@@ -95,7 +95,7 @@ Status delete_dir(const std::string& path) {
     if (!strcmp(next_file->d_name, ".") || !strcmp(next_file->d_name, ".."))
       continue;
     filename = dirname_real + "/" + next_file->d_name;
-    if (remove(filename.c_str())) {core/src/vfs/filesystem.cc
+    if (remove(filename.c_str())) {
       return LOG_STATUS(Status::OSError(
           std::string("Cannot delete file; ") + strerror(errno)));
     }

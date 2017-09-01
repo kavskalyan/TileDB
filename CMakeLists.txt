@@ -87,6 +87,10 @@ if(USE_HDFS)
   set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${HDFS_SHARED_LIB})
 endif()
 
+find_package (Threads)
+add_definitions( -pthread  -m64)
+set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${CMAKE_THREAD_LIBS_INIT})
+
 # Set C++ 2011 flag
 include(SetCXX2011Flag)
 
