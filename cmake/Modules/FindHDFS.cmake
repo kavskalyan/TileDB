@@ -41,6 +41,15 @@ if(NOT HDFS_FOUND)
              "${HADOOP_HOME}/lib/native"
 	     "${HADOOP_HOME}/include")
     endif()
+    IF ( "${JAVA_HOME}" STREQUAL "" )
+      MESSAGE("---JAVA_HOME not specified")
+    ELSE ()
+      LIST (APPEND POSSILE_PATHS_JVM
+          "${JAVA_HOME}"
+          "${JAVA_HOME}/lib/amd64/server/"
+        )
+    ENDIF()
+FIND_FILE (JVM_LIBRARIES NAMES libjvm.so PATHS ${POSSILE_PATHS_JVM} NO_DEFAULT_PATH)
 
     message("Exploring these paths to find libhdfs${CMAKE_SHARED_LIBRARY_SUFFIX} and hdfs.h: ${POSSILE_PATHS}.")
 
@@ -58,7 +67,7 @@ if(NOT HDFS_FOUND)
     endif()
 
     if(HDFS_INCLUDE_DIR)
-        message(STATUS "Found HDFS include: ${HDFS_INCLUDE_PATH}")
+        message(STATUS "Found HDFS include: ${HDFS_INCLUDE_DIR}")
     else()
         message(STATUS "HDFS header file not found")
     endif()
