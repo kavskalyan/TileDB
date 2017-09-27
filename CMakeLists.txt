@@ -44,12 +44,8 @@ if(APPLE)
 endif()
 
 # Default user definitions
-set(USE_MPI False CACHE BOOL "Enables MPI")
 set(USE_HDFS False CACHE BOOL "Enables HDFS")
 set(TILEDB_VERBOSE False CACHE BOOL "Prints TileDB errors with verbosity")
-set(MAC_ADDRESS_INTERFACE "" 
-    CACHE STRING "The interface carrying the MAC address of the machine."
-)
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -67,20 +63,11 @@ set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${BLOSC_LIBRARIES})
 find_package(ZSTD REQUIRED)
 include_directories(${ZSTD_INCLUDE_DIR})
 set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${ZSTD_LIBRARIES})
-find_package(OpenSSL REQUIRED)
-include_directories(${OPENSSL_INCLUDE_DIR})
-set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${OPENSSL_LIBRARIES})
 find_package(Bzip2 REQUIRED)
 include_directories(${BZIP2_INCLUDE_DIR})
 set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${BZIP2_LIBRARIES})
 
 # Find optional library dependencies
-if(USE_MPI)
-  find_package(MPI REQUIRED)
-  include_directories(${MPI_CXX_INCLUDE_PATH})
-  set(TILEDB_LIB_DEPENDENCIES ${TILEDB_LIB_DEPENDENCIES} ${MPI_CXX_LIBRARIES})
-endif()
-
 if(USE_HDFS)
   find_package(HDFS REQUIRED)
   include_directories(${HDFS_INCLUDE_DIR})
@@ -102,25 +89,15 @@ set(CMAKE_CXX_FLAGS_COVERAGE "-DDEBUG -g3 -gdwarf-3 --coverage")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-literal-suffix")
 endif()
-if(USE_MPI)
-  set(CMAKE_CXX_COMPILER ${MPI_CXX_COMPILER})
-endif()
 
 # Add definitions
 add_definitions(-D_FILE_OFFSET_BITS=64)
-if(USE_MPI)
-  add_definitions(-DHAVE_MPI)
-endif()
 if(USE_HDFS)
   add_definitions(-DHAVE_HDFS)
 endif()
 if(TILEDB_VERBOSE)
   add_definitions(-DTILEDB_VERBOSE)
   message(STATUS "The TileDB library is compiled with verbosity.")
-endif()
-if(MAC_ADDRESS_INTERFACE)
-  add_definitions(-DTILEDB_MAC_ADDRESS_INTERFACE=${MAC_ADDRESS_INTERFACE})
-  message(STATUS "Set MAC address interface to ${MAC_ADDRESS_INTERFACE}.")
 endif()
 
 # Enable testing
@@ -146,13 +123,17 @@ if (${CLANG_FORMAT_FOUND})
   add_custom_target(format ${SCRIPTS_DIR}/run-clang-format.sh ${CMAKE_CURRENT_SOURCE_DIR} ${CLANG_FORMAT_BIN} 1
     `find ${CMAKE_CURRENT_SOURCE_DIR}/core/include
           ${CMAKE_CURRENT_SOURCE_DIR}/core/src
-          ${CMAKE_CURRENT_SOURCE_DIR}/test/src -name \\*.cc -or -name \\*.h`)
+          ${CMAKE_CURRENT_SOURCE_DIR}/test/src
+          ${CMAKE_CURRENT_SOURCE_DIR}/examples/src
+          -name \\*.cc -or -name \\*.h`)
 
   # runs clang format and exits with a non-zero exit code if any files need to be reformatted
   add_custom_target(check-format ${SCRIPTS_DIR}/run-clang-format.sh ${CMAKE_CURRENT_SOURCE_DIR} ${CLANG_FORMAT_BIN} 0
     `find ${CMAKE_CURRENT_SOURCE_DIR}/core/include
           ${CMAKE_CURRENT_SOURCE_DIR}/core/src
-          ${CMAKE_CURRENT_SOURCE_DIR}/test/src -name \\*.cc -or -name \\*.h`)
+          ${CMAKE_CURRENT_SOURCE_DIR}/test/src
+          ${CMAKE_CURRENT_SOURCE_DIR}/examples/src
+          -name \\*.cc -or -name \\*.h`)
 endif()
 
 ###########################################################
