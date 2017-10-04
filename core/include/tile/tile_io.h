@@ -33,7 +33,6 @@
 #ifndef TILEDB_TILE_IO_H
 #define TILEDB_TILE_IO_H
 
-#include "attribute.h"
 #include "storage_manager.h"
 #include "tile.h"
 #include "uri.h"
@@ -56,9 +55,9 @@ class TileIO {
    * Constructor.
    *
    * @param storage_manager The storage manager.
-   * @param attr_uri The name of the file that stores attribute data.
+   * @param uri The name of the file that stores data.
    */
-  TileIO(StorageManager* storage_manager, const URI& attr_uri);
+  TileIO(StorageManager* storage_manager, const URI& uri);
 
   /** Destructor. */
   ~TileIO();
@@ -67,14 +66,14 @@ class TileIO {
   /*                API                */
   /* ********************************* */
 
-  /** Retrieves the size of the attribute file. */
+  /** Retrieves the size of the file. */
   Status file_size(uint64_t* size) const;
 
   /**
-   * Reads into a tile from the attribute file.
+   * Reads into a tile from the file.
    *
    * @param tile The tile to read into.
-   * @param file_offset The offset in the attribute file to read from.
+   * @param file_offset The offset in the file to read from.
    * @param compressed_size The size of the compressed tile.
    * @param tile_size The size of the decompressed tile.
    * @return Status.
@@ -86,7 +85,39 @@ class TileIO {
       uint64_t tile_size);
 
   /**
-   * Writes (appends) a tile into the attribute file.
+   * Reads a generic tile from the file. This means that there are not tile
+   * metadata kept anywhere except for the file. Therefore, the function
+   * first reads a small header to retrieve appropriate information about
+   * the tile, and then reads the tile data. Note that it creates a new
+   * Tile object.
+   *
+   * @param tile The tile that will hold the read data.
+   * @param file_offset The offset in the file to read from.
+   * @return Status
+   */
+  Status read_generic(Tile** tile, uint64_t file_offset);
+
+  /**
+   * Reads the generic tile header from the file. It also creates a new tile
+   * with the header information, and retrieves the tile original and
+   * compressed size.
+   *
+   * @param tile The tile to be created.
+   * @param file_offset The offset where the header read will begin.
+   * @param tile_size The original tile size to be retrieved.
+   * @param compressed_size The compressed tile size to be retrieved.
+   * @param header_size The size of the retrieved header.
+   * @return Status
+   */
+  Status read_generic_tile_header(
+      Tile** tile,
+      uint64_t file_offset,
+      uint64_t* tile_size,
+      uint64_t* compressed_size,
+      uint64_t* header_size);
+
+  /**
+   * Writes (appends) a tile into the file.
    *
    * @param tile The tile to be written.
    * @param bytes_written The actual number of bytes written. This may be
@@ -96,13 +127,34 @@ class TileIO {
    */
   Status write(Tile* tile, uint64_t* bytes_written);
 
+  /**
+   * Writes a tile generically to the file. This means that a header will be
+   * prepended to the file before writing the tile contents. The reason is
+   * that there will be no tile metadata retrieved from another source,
+   * other thant the file itself.
+   *
+   * @param tile The tile to be written.
+   * @return Status
+   */
+  Status write_generic(Tile* tile);
+
+  /**
+   * Writes the generic tile header to the file.
+   *
+   * @param tile The tile whose header will be written.
+   * @param compressed_size The size that the (potentially) compressed tile
+   *     will occupy in the file.
+   * @return Status
+   */
+  Status write_generic_tile_header(Tile* tile, uint64_t compressed_size);
+
  private:
   /* ********************************* */
   /*         PRIVATE ATTRIBUTES        */
   /* ********************************* */
 
-  /** The attribute URI. */
-  URI attr_uri_;
+  /** The file URI. */
+  URI uri_;
 
   /**
    * An internal buffer used to facilitate compression/decompression (or
@@ -119,6 +171,9 @@ class TileIO {
 
   /**
    * Compresses a tile. The compressed data are written in buffer_.
+   * Note that a coordinates tile must be split into one tile per
+   * dimension. In that case *compress_one_tile* will be invoked
+   * for each dimension sub-tile.
    *
    * @param tile The tile to be compressed.
    * @return Status
@@ -126,84 +181,48 @@ class TileIO {
   Status compress_tile(Tile* tile);
 
   /**
-   * Compresses a tile with gzip. The compressed data are written in buffer_.
-   *
-   * @param tile The tile to be compressed.
-   * @param level The compression level.
-   * @return Status
-   */
-  Status compress_tile_gzip(Tile* tile, int level);
-
-  /**
-   * Compresses a tile with zstd. The compressed data are written in buffer_.
-   *
-   * @param tile The tile to be compressed.
-   * @param level The compression level.
-   * @return Status
-   */
-  Status compress_tile_zstd(Tile* tile, int level);
-
-  /**
-   * Compresses a tile with lz4. The compressed data are written in buffer_.
-   *
-   * @param tile The tile to be compressed.
-   * @param level The compression level.
-   * @return Status
-   */
-  Status compress_tile_lz4(Tile* tile, int level);
-
-  /**
-   * Compresses a tile with blosc. The compressed data are written in buffer_.
-   *
-   * @param tile The tile to be compressed.
-   * @param level The compression level.
-   * @return Status
-   */
-  Status compress_tile_blosc(Tile* tile, int level, const char* compressor);
-
-  /**
-   * Compresses a tile with RLE. The compressed data are written in buffer_.
+   * Compresses a single tile. The compressed data are written in buffer_.
    *
    * @param tile The tile to be compressed.
    * @return Status
    */
-  Status compress_tile_rle(Tile* tile);
+  Status compress_one_tile(Tile* tile);
 
   /**
-   * Compresses a tile with bzip2. The compressed data are written in buffer_.
+   * Computes necessary info for chunking a tile upon compression.
    *
-   * @param tile The tile to be compressed.
-   * @param level The compression level.
-   * @return Status
+   * @param tile The tile whose chunking info is being computed.
+   * @param chunk_num The number of chunks to compute.
+   * @param max_chunk_size The maximum chunk size to compute.
+   * @param overhead The total compression overhead.
    */
-  Status compress_tile_bzip2(Tile* tile, int level);
+  void compute_chunking_info(
+      Tile* tile,
+      uint64_t* chunk_num,
+      uint64_t* max_chunk_size,
+      uint64_t* overhead);
 
   /**
-   * Compresses a tile with double delta. The compressed data are written in
-   * buffer_.
-   *
-   * @param tile The tile to be compressed.
-   * @return Status
-   */
-  Status compress_tile_double_delta(Tile* tile);
-
-  /**
-   * Decompresses buffer_ into a tile. .
+   * Decompresses buffer_ into a tile.
+   * Note that a coordinates tile was split into one tile per
+   * dimension. In that case *decompress_one_tile* will be invoked
+   * for each dimension sub-tile.
    *
    * @param tile The tile where the decompressed data will be stored.
-   * @param tile_size The original size of the (decompressed) tile.
    * @return Status
    */
-  Status decompress_tile(Tile* tile, uint64_t tile_size);
+  Status decompress_tile(Tile* tile);
 
   /**
    * Decompresses buffer_ into a tile.
    *
    * @param tile The tile where the decompressed data will be stored.
-   * @param tile_size The original size of the (decompressed) tile.
    * @return Status
    */
-  Status decompress_tile_double_delta(Tile* tile, uint64_t tile_size);
+  Status decompress_one_tile(Tile* tile);
+
+  /** Computes the compression overhead on *nbytes* of the input tile. */
+  uint64_t overhead(Tile* tile, uint64_t nbytes) const;
 };
 
 }  // namespace tiledb

@@ -160,58 +160,47 @@ Status StorageManager::load(
 
   URI array_metadata_uri =
       array_uri.join_path(constants::array_metadata_filename);
-  uint64_t buffer_size;
-  RETURN_NOT_OK(file_size(array_metadata_uri, &buffer_size));
 
   // Read from file
-  void* buffer = std::malloc(buffer_size);
-  if (buffer == nullptr)
-    return LOG_STATUS(Status::StorageManagerError(
-        "Cannot load array metadata; Buffer allocation error"));
-  RETURN_NOT_OK_ELSE(
-      read_from_file(array_metadata_uri, 0, buffer, buffer_size),
-      std::free(buffer));
+  auto tile = (Tile*)nullptr;
+  auto tile_io = new TileIO(this, array_metadata_uri);
+  RETURN_NOT_OK_ELSE(tile_io->read_generic(&tile, 0), delete tile_io);
 
   // Deserialize
-  auto buff = new ConstBuffer(buffer, buffer_size);
-  Status st = array_metadata->deserialize(buff);
+  tile->reset_offset();
+  auto cbuff = new ConstBuffer(tile->buffer());
+  Status st = array_metadata->deserialize(cbuff);
 
-  // Clean up
-  delete buff;
-  std::free(buffer);
+  delete cbuff;
+  delete tile;
+  delete tile_io;
 
   return st;
 }
 
-Status StorageManager::load(FragmentMetadata* metadata) {
-  const URI& fragment_uri = metadata->fragment_uri();
+Status StorageManager::load(FragmentMetadata* fragment_metadata) {
+  const URI& fragment_uri = fragment_metadata->fragment_uri();
 
   if (!vfs_->is_dir(fragment_uri))
     return Status::StorageManagerError(
         "Cannot load fragment metadata; Fragment directory does not exist");
 
-  // Get metadata file name and size
-  URI metadata_filename = fragment_uri.join_path(
+  URI fragment_metadata_uri = fragment_uri.join_path(
       std::string(constants::fragment_metadata_filename));
-  uint64_t buffer_size;
-  RETURN_NOT_OK(file_size(metadata_filename, &buffer_size));
 
   // Read from file
-  void* buffer = std::malloc(buffer_size);
-  if (buffer == nullptr)
-    return LOG_STATUS(Status::StorageManagerError(
-        "Cannot load fragment metadata; Buffer allocation error"));
-  RETURN_NOT_OK_ELSE(
-      read_from_file(metadata_filename, 0, buffer, buffer_size),
-      std::free(buffer));
+  auto tile = (Tile*)nullptr;
+  auto tile_io = new TileIO(this, fragment_metadata_uri);
+  RETURN_NOT_OK_ELSE(tile_io->read_generic(&tile, 0), delete tile_io);
 
   // Deserialize
-  auto buff = new ConstBuffer(buffer, buffer_size);
-  Status st = metadata->deserialize(buff);
+  tile->reset_offset();
+  auto cbuff = new ConstBuffer(tile->buffer());
+  Status st = fragment_metadata->deserialize(cbuff);
 
-  // Clean up
-  delete buff;
-  std::free(buffer);
+  delete cbuff;
+  delete tile;
+  delete tile_io;
 
   return st;
 }
@@ -274,8 +263,13 @@ Status StorageManager::query_submit_async(
 }
 
 Status StorageManager::read_from_file(
-    const URI& uri, uint64_t offset, void* buffer, uint64_t nbytes) const {
-  return vfs_->read_from_file(uri, offset, buffer, nbytes);
+    const URI& uri, uint64_t offset, Buffer* buffer, uint64_t nbytes) const {
+  RETURN_NOT_OK(buffer->realloc(nbytes));
+  RETURN_NOT_OK(vfs_->read_from_file(uri, offset, buffer->data(), nbytes));
+  buffer->set_size(nbytes);
+  buffer->reset_offset();
+
+  return Status::Ok();
 }
 
 Status StorageManager::store(ArrayMetadata* array_metadata) {
@@ -288,14 +282,28 @@ Status StorageManager::store(ArrayMetadata* array_metadata) {
   auto buff = new Buffer();
   RETURN_NOT_OK_ELSE(array_metadata->serialize(buff), delete buff);
 
-  // Write to file
+  // Delete file if it exists already
   if (is_file(array_metadata_uri))
     RETURN_NOT_OK_ELSE(delete_file(array_metadata_uri), delete buff);
-  RETURN_NOT_OK_ELSE(
-      write_to_file(array_metadata_uri, buff->data(), buff->offset()),
-      delete buff);
 
-  return Status::Ok();
+  // Write to file
+  buff->reset_offset();
+  auto tile = new Tile(
+      constants::generic_tile_datatype,
+      constants::generic_tile_compressor,
+      constants::generic_tile_compression_level,
+      constants::generic_tile_cell_size,
+      0,
+      buff,
+      false);
+  auto tile_io = new TileIO(this, array_metadata_uri);
+  Status st = tile_io->write_generic(tile);
+
+  delete tile;
+  delete tile_io;
+  delete buff;
+
+  return st;
 }
 
 Status StorageManager::store(FragmentMetadata* metadata) {
@@ -304,15 +312,33 @@ Status StorageManager::store(FragmentMetadata* metadata) {
   if (!vfs_->is_dir(fragment_uri))
     return Status::Ok();
 
+  // Serialize
   auto buff = new Buffer();
   RETURN_NOT_OK_ELSE(metadata->serialize(buff), delete buff);
 
-  URI metadata_filename = fragment_uri.join_path(
+  // Write to file
+  URI fragment_metadata_uri = fragment_uri.join_path(
       std::string(constants::fragment_metadata_filename));
-  Status st =
-      vfs_->write_to_file(metadata_filename, buff->data(), buff->offset());
+  buff->reset_offset();
+  auto tile = new Tile(
+      constants::generic_tile_datatype,
+      constants::generic_tile_compressor,
+      constants::generic_tile_compression_level,
+      constants::generic_tile_cell_size,
+      0,
+      buff,
+      false);
+  auto tile_io = new TileIO(this, fragment_metadata_uri);
+  Status st = tile_io->write_generic(tile);
 
+  delete tile;
+  delete tile_io;
   delete buff;
+
+  //  Status st =
+  //      vfs_->write_to_file(metadata_filename, buff->data(), buff->offset());
+
+  //  delete buff;
   return st;
 }
 
@@ -320,9 +346,8 @@ Status StorageManager::sync(const URI& uri) {
   return vfs_->sync(uri);
 }
 
-Status StorageManager::write_to_file(
-    const URI& uri, const void* buffer, uint64_t buffer_size) const {
-  return vfs_->write_to_file(uri, buffer, buffer_size);
+Status StorageManager::write_to_file(const URI& uri, Buffer* buffer) const {
+  return vfs_->write_to_file(uri, buffer->data(), buffer->size());
 }
 
 /* ****************************** */
@@ -508,7 +533,7 @@ Status StorageManager::open_array_load_metadata(
   if (open_array->array_metadata() != nullptr)
     return Status::Ok();
 
-  auto array_metadata = new ArrayMetadata();
+  auto array_metadata = new ArrayMetadata(array_uri);
   RETURN_NOT_OK_ELSE(
       load(array_uri.to_string(), array_metadata), delete array_metadata);
   open_array->set_array_metadata(array_metadata);

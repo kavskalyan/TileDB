@@ -117,6 +117,18 @@ extern const char* fragment_filename;
 /** The fragment metadata file name. */
 extern const char* fragment_metadata_filename;
 
+/** Default datatype for a generic tile. */
+extern const Datatype generic_tile_datatype;
+
+/** Default compressor for a generic tile. */
+extern Compressor generic_tile_compressor;
+
+/** Default compression level for a generic tile. */
+extern int generic_tile_compression_level;
+
+/** Default cell size for a generic tile. */
+extern uint64_t generic_tile_cell_size;
+
 /** The group file name. */
 extern const char* group_filename;
 
@@ -230,6 +242,12 @@ extern const char* unordered_str;
 
 /** The string representation of null. */
 extern const char* null_str;
+
+/** The version in format { major, minor, revision }. */
+extern const int version[3];
+
+/** The size of a tile chunk. */
+extern const uint64_t tile_chunk_size;
 
 }  // namespace constants
 

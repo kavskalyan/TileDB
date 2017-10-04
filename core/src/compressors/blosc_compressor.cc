@@ -39,15 +39,11 @@
 
 namespace tiledb {
 
-uint64_t Blosc::compress_bound(uint64_t nbytes) {
-  return nbytes + BLOSC_MAX_OVERHEAD;
-}
-
 Status Blosc::compress(
     const char* compressor,
     uint64_t type_size,
     int level,
-    const Buffer* input_buffer,
+    ConstBuffer* input_buffer,
     Buffer* output_buffer) {
   // Sanity check
   if (input_buffer->data() == nullptr || output_buffer->data() == nullptr)
@@ -56,10 +52,10 @@ Status Blosc::compress(
 
   // Initialize Blosc compressor
   if (blosc_set_compressor(compressor) < 0) {
-    return Status::CompressionError(
+    return LOG_STATUS(Status::CompressionError(
         std::string(
             "Blosc compression error, failed to set Blosc compressor ") +
-        compressor);
+        compressor));
   }
 
   // Compress
@@ -67,22 +63,23 @@ Status Blosc::compress(
       level < 0 ? Blosc::default_level() : level,
       1,  // shuffle
       type_size,
-      input_buffer->offset(),
+      input_buffer->size(),
       input_buffer->data(),
-      output_buffer->data(),
-      output_buffer->size());
+      output_buffer->cur_data(),
+      output_buffer->free_space());
 
   // Handle error
   if (rc < 0)
-    return Status::CompressionError("Blosc compression error");
+    return LOG_STATUS(Status::CompressionError("Blosc compression error"));
 
   // Set size of compressed data
-  output_buffer->set_offset(uint64_t(rc));
+  output_buffer->advance_size(uint64_t(rc));
+  output_buffer->advance_offset(uint64_t(rc));
 
   return Status::Ok();
 }
 
-Status Blosc::decompress(const Buffer* input_buffer, Buffer* output_buffer) {
+Status Blosc::decompress(ConstBuffer* input_buffer, Buffer* output_buffer) {
   // Sanity check
   if (input_buffer->data() == nullptr || output_buffer->data() == nullptr)
     return LOG_STATUS(Status::CompressionError(
@@ -90,15 +87,24 @@ Status Blosc::decompress(const Buffer* input_buffer, Buffer* output_buffer) {
 
   // Decompress
   int rc = blosc_decompress(
-      static_cast<char*>(input_buffer->data()),
-      output_buffer->data(),
-      output_buffer->size());
+      input_buffer->data(),
+      output_buffer->cur_data(),
+      output_buffer->free_space());
 
   // Handle error
   if (rc <= 0)
-    return Status::CompressionError("Blosc decompress error");
+    return LOG_STATUS(Status::CompressionError("Blosc decompress error"));
+
+  // Set size of decompressed data
+  output_buffer->advance_size(uint64_t(rc));
+  output_buffer->advance_offset(uint64_t(rc));
 
   return Status::Ok();
+}
+
+uint64_t Blosc::overhead(uint64_t nbytes) {
+  // Blosc has a fixed overhead
+  return BLOSC_MAX_OVERHEAD;
 }
 
 };  // namespace tiledb

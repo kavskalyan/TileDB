@@ -37,19 +37,21 @@
 
 #include <iostream>
 
-TEST_CASE("Compression: Test DoubleDelta 1-element case") {
+TEST_CASE("Compression-DoubleDelta: Test 1-element case", "[double-delta]") {
   // Compress
   int data[] = {1};
   auto comp_in_buff = new tiledb::ConstBuffer(data, sizeof(data));
   auto comp_out_buff = new tiledb::Buffer();
-  auto st = tiledb::DoubleDelta::compress<int>(comp_in_buff, comp_out_buff);
+  auto st = tiledb::DoubleDelta::compress(
+      tiledb::Datatype::INT32, comp_in_buff, comp_out_buff);
   REQUIRE(st.ok());
 
   // Decompress
   auto decomp_in_buff =
-      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->offset());
+      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->size());
   auto decomp_out_buff = new tiledb::Buffer();
-  st = tiledb::DoubleDelta::decompress<int>(decomp_in_buff, decomp_out_buff);
+  st = tiledb::DoubleDelta::decompress(
+      tiledb::Datatype::INT32, decomp_in_buff, decomp_out_buff);
   REQUIRE(st.ok());
 
   // Check data
@@ -63,19 +65,21 @@ TEST_CASE("Compression: Test DoubleDelta 1-element case") {
   delete decomp_out_buff;
 }
 
-TEST_CASE("Compression: Test DoubleDelta 2-element case") {
+TEST_CASE("Compression-DoubleDelta: Test 2-element case", "[double-delta]") {
   // Compress
   int data[] = {1, 2};
   auto comp_in_buff = new tiledb::ConstBuffer(data, sizeof(data));
   auto comp_out_buff = new tiledb::Buffer();
-  auto st = tiledb::DoubleDelta::compress<int>(comp_in_buff, comp_out_buff);
+  auto st = tiledb::DoubleDelta::compress(
+      tiledb::Datatype::INT32, comp_in_buff, comp_out_buff);
   REQUIRE(st.ok());
 
   // Decompress
   auto decomp_in_buff =
-      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->offset());
+      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->size());
   auto decomp_out_buff = new tiledb::Buffer();
-  st = tiledb::DoubleDelta::decompress<int>(decomp_in_buff, decomp_out_buff);
+  st = tiledb::DoubleDelta::decompress(
+      tiledb::Datatype::INT32, decomp_in_buff, decomp_out_buff);
   REQUIRE(st.ok());
 
   // Check data
@@ -90,19 +94,23 @@ TEST_CASE("Compression: Test DoubleDelta 2-element case") {
   delete decomp_out_buff;
 }
 
-TEST_CASE("Compression: Test DoubleDelta 3-element case") {
+TEST_CASE("Compression-DoubleDelta: Test 3-element case", "[double-delta]") {
   // Compress
   int data[] = {100, 300, 200};
   auto comp_in_buff = new tiledb::ConstBuffer(data, sizeof(data));
   auto comp_out_buff = new tiledb::Buffer();
-  auto st = tiledb::DoubleDelta::compress<int>(comp_in_buff, comp_out_buff);
+  auto st = tiledb::DoubleDelta::compress(
+      tiledb::Datatype::INT32, comp_in_buff, comp_out_buff);
   REQUIRE(st.ok());
 
   // Decompress
   auto decomp_in_buff =
-      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->offset());
+      new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->size());
   auto decomp_out_buff = new tiledb::Buffer();
-  st = tiledb::DoubleDelta::decompress<int>(decomp_in_buff, decomp_out_buff);
+  st = decomp_out_buff->realloc(sizeof(data));
+  REQUIRE(st.ok());
+  st = tiledb::DoubleDelta::decompress(
+      tiledb::Datatype::INT32, decomp_in_buff, decomp_out_buff);
   REQUIRE(st.ok());
 
   // Check data
@@ -118,19 +126,23 @@ TEST_CASE("Compression: Test DoubleDelta 3-element case") {
   delete decomp_out_buff;
 }
 
-TEST_CASE("Compression: Test DoubleDelta 4-element case") {
+TEST_CASE("Compression-DoubleDelta: Test 4-element case", "[double-delta]") {
   // Compress
   int data[] = {100, 300, 200, 600};
   auto comp_in_buff = new tiledb::ConstBuffer(data, sizeof(data));
   auto comp_out_buff = new tiledb::Buffer();
-  auto st = tiledb::DoubleDelta::compress<int>(comp_in_buff, comp_out_buff);
+  auto st = tiledb::DoubleDelta::compress(
+      tiledb::Datatype::INT32, comp_in_buff, comp_out_buff);
   REQUIRE(st.ok());
 
   // Decompress
   auto decomp_in_buff =
       new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->offset());
   auto decomp_out_buff = new tiledb::Buffer();
-  st = tiledb::DoubleDelta::decompress<int>(decomp_in_buff, decomp_out_buff);
+  st = decomp_out_buff->realloc(sizeof(data));
+  REQUIRE(st.ok());
+  st = tiledb::DoubleDelta::decompress(
+      tiledb::Datatype::INT32, decomp_in_buff, decomp_out_buff);
   REQUIRE(st.ok());
 
   // Check data
@@ -147,7 +159,7 @@ TEST_CASE("Compression: Test DoubleDelta 4-element case") {
   delete decomp_out_buff;
 }
 
-TEST_CASE("Compression: Test DoubleDelta n-element case") {
+TEST_CASE("Compression-DoubleDelta: Test n-element case", "[double-delta]") {
   // Create random array
   std::srand(std::time(0));
   int n = 1000000;
@@ -159,14 +171,18 @@ TEST_CASE("Compression: Test DoubleDelta n-element case") {
   // Compress
   auto comp_in_buff = new tiledb::ConstBuffer(data, n * sizeof(int));
   auto comp_out_buff = new tiledb::Buffer();
-  auto st = tiledb::DoubleDelta::compress<int>(comp_in_buff, comp_out_buff);
+  auto st = tiledb::DoubleDelta::compress(
+      tiledb::Datatype::INT32, comp_in_buff, comp_out_buff);
   REQUIRE(st.ok());
 
   // Decompress
   auto decomp_in_buff =
       new tiledb::ConstBuffer(comp_out_buff->data(), comp_out_buff->offset());
   auto decomp_out_buff = new tiledb::Buffer();
-  st = tiledb::DoubleDelta::decompress<int>(decomp_in_buff, decomp_out_buff);
+  st = decomp_out_buff->realloc(sizeof(int) * n);
+  REQUIRE(st.ok());
+  st = tiledb::DoubleDelta::decompress(
+      tiledb::Datatype::INT32, decomp_in_buff, decomp_out_buff);
   REQUIRE(st.ok());
 
   // Check data

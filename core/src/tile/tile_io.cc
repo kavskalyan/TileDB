@@ -42,16 +42,22 @@
 
 #include <iostream>
 
+/* ****************************** */
+/*             MACROS             */
+/* ****************************** */
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 namespace tiledb {
 
 /* ****************************** */
 /*   CONSTRUCTORS & DESTRUCTORS   */
 /* ****************************** */
 
-TileIO::TileIO(StorageManager* storage_manager, const URI& attr_uri)
-    : attr_uri_(attr_uri)
+TileIO::TileIO(StorageManager* storage_manager, const URI& uri)
+    : uri_(uri)
     , storage_manager_(storage_manager) {
-  buffer_ = nullptr;
+  buffer_ = new Buffer();
 }
 
 TileIO::~TileIO() {
@@ -63,7 +69,7 @@ TileIO::~TileIO() {
 /* ****************************** */
 
 Status TileIO::file_size(uint64_t* size) const {
-  return storage_manager_->file_size(attr_uri_, size);
+  return storage_manager_->file_size(uri_, size);
 }
 
 Status TileIO::read(
@@ -71,60 +77,146 @@ Status TileIO::read(
     uint64_t file_offset,
     uint64_t compressed_size,
     uint64_t tile_size) {
-  tile->reset_offset();
-
   // No compression
-  if (tile->compressor() == Compressor::NO_COMPRESSION) {
-    RETURN_NOT_OK(tile->alloc(tile_size));
-    RETURN_NOT_OK(storage_manager_->read_from_file(
-        attr_uri_, file_offset, tile->data(), tile_size));
-    return Status::Ok();
-  }
+  if (tile->compressor() == Compressor::NO_COMPRESSION)
+    return storage_manager_->read_from_file(
+        uri_, file_offset, tile->buffer(), tile_size);
 
   // Compression
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer();
-
-  buffer_->realloc(compressed_size);
-
   RETURN_NOT_OK(storage_manager_->read_from_file(
-      attr_uri_, file_offset, buffer_->data(), compressed_size));
+      uri_, file_offset, buffer_, compressed_size));
 
   // Decompress tile
-  RETURN_NOT_OK(decompress_tile(tile, tile_size));
+  tile->reset_offset();
+  tile->reset_size();
+  buffer_->reset_offset();
+  RETURN_NOT_OK(tile->realloc(tile_size));
+  RETURN_NOT_OK(decompress_tile(tile));
+  tile->reset_offset();
 
-  // Zip coordinates if this is a coordinates tile
-  if (tile->stores_coords())
-    tile->zip_coordinates();
+  return Status::Ok();
+}
 
-  // TODO: here we will put all other filters, and potentially employ chunking
-  // TODO: choose the proper buffer based on all filters, not just compression
+Status TileIO::read_generic(Tile** tile, uint64_t file_offset) {
+  uint64_t tile_size;
+  uint64_t compressed_size;
+  uint64_t header_size;
+
+  RETURN_NOT_OK(read_generic_tile_header(
+      tile, file_offset, &tile_size, &compressed_size, &header_size));
+  RETURN_NOT_OK_ELSE(
+      read(*tile, file_offset + header_size, compressed_size, tile_size),
+      delete *tile);
+
+  return Status::Ok();
+}
+
+Status TileIO::read_generic_tile_header(
+    Tile** tile,
+    uint64_t file_offset,
+    uint64_t* tile_size,
+    uint64_t* compressed_size,
+    uint64_t* header_size) {
+  // Initializations
+  *header_size = 3 * sizeof(uint64_t) + 2 * sizeof(char) + sizeof(int);
+  char datatype;
+  uint64_t cell_size;
+  char compressor;
+  int compression_level;
+
+  // Read header from file
+  auto header_buff = new Buffer();
+  RETURN_NOT_OK_ELSE(
+      storage_manager_->read_from_file(
+          uri_, file_offset, header_buff, *header_size),
+      delete header_buff);
+
+  // Read header individual values
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(compressed_size, sizeof(uint64_t)), delete header_buff);
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(tile_size, sizeof(uint64_t)), delete header_buff);
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(&datatype, sizeof(char)), delete header_buff);
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(&cell_size, sizeof(uint64_t)), delete header_buff);
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(&compressor, sizeof(char)), delete header_buff);
+  RETURN_NOT_OK_ELSE(
+      header_buff->read(&compression_level, sizeof(int)), delete header_buff);
+
+  delete header_buff;
+
+  *tile = new Tile((Datatype)datatype, (Compressor)compressor, cell_size, 0);
 
   return Status::Ok();
 }
 
 Status TileIO::write(Tile* tile, uint64_t* bytes_written) {
-  // TODO: here we will put all other filters, and potentially employ chunking
-  // TODO: choose the proper buffer based on all filters, not just compression
-
-  // Split coordinates if this is a coordinates tile
-  if (tile->stores_coords())
-    tile->split_coordinates();
+  // Reset the tile and buffer offset
+  tile->reset_offset();
+  buffer_->reset_size();
+  buffer_->reset_offset();
 
   // Compress tile
-  RETURN_NOT_OK(compress_tile(tile));
+  Compressor compressor = tile->compressor();
+  if (compressor != Compressor::NO_COMPRESSION)
+    RETURN_NOT_OK(compress_tile(tile));
 
   // Prepare to write
-  Compressor compressor = tile->compressor();
-  void* buffer = (compressor == Compressor::NO_COMPRESSION) ? tile->data() :
-                                                              buffer_->data();
-  uint64_t buffer_size = (compressor == Compressor::NO_COMPRESSION) ?
-                             tile->offset() :
-                             buffer_->offset();
-  *bytes_written = buffer_size;
+  auto buffer =
+      (compressor == Compressor::NO_COMPRESSION) ? tile->buffer() : buffer_;
+  *bytes_written = buffer->size();
 
-  // Write based on the chosen method
-  return storage_manager_->write_to_file(attr_uri_, buffer, buffer_size);
+  RETURN_NOT_OK(storage_manager_->write_to_file(uri_, buffer));
+
+  return Status::Ok();
+}
+
+Status TileIO::write_generic(Tile* tile) {
+  // Reset the tile and buffer offset
+  tile->reset_offset();
+  buffer_->reset_size();
+  buffer_->reset_offset();
+
+  // Compress tile
+  Compressor compressor = tile->compressor();
+  if (compressor != Compressor::NO_COMPRESSION)
+    RETURN_NOT_OK(compress_tile(tile));
+
+  auto buffer =
+      (compressor == Compressor::NO_COMPRESSION) ? tile->buffer() : buffer_;
+
+  RETURN_NOT_OK(write_generic_tile_header(tile, buffer->size()));
+  RETURN_NOT_OK(storage_manager_->write_to_file(uri_, buffer));
+
+  return Status::Ok();
+}
+
+Status TileIO::write_generic_tile_header(Tile* tile, uint64_t compressed_size) {
+  // Initializations
+  uint64_t tile_size = tile->size();
+  auto datatype = (char)tile->type();
+  uint64_t cell_size = tile->cell_size();
+  auto compressor = (char)tile->compressor();
+  int compression_level = tile->compression_level();
+
+  // Write to buffer
+  auto buff = new Buffer();
+  RETURN_NOT_OK_ELSE(
+      buff->write(&compressed_size, sizeof(uint64_t)), delete buff);
+  RETURN_NOT_OK_ELSE(buff->write(&tile_size, sizeof(uint64_t)), delete buff);
+  RETURN_NOT_OK_ELSE(buff->write(&datatype, sizeof(char)), delete buff);
+  RETURN_NOT_OK_ELSE(buff->write(&cell_size, sizeof(uint64_t)), delete buff);
+  RETURN_NOT_OK_ELSE(buff->write(&compressor, sizeof(char)), delete buff);
+  RETURN_NOT_OK_ELSE(buff->write(&compression_level, sizeof(int)), delete buff);
+
+  // Write to file
+  Status st = storage_manager_->write_to_file(uri_, buff);
+
+  delete buff;
+
+  return st;
 }
 
 /* ****************************** */
@@ -132,211 +224,262 @@ Status TileIO::write(Tile* tile, uint64_t* bytes_written) {
 /* ****************************** */
 
 Status TileIO::compress_tile(Tile* tile) {
-  // For easy reference
-  Compressor compression = tile->compressor();
-  int level = tile->compression_level();
+  // Simple case - No coordinates
+  if (!tile->stores_coords())
+    return compress_one_tile(tile);
 
-  // Handle different compression
-  switch (compression) {
-    case Compressor::NO_COMPRESSION:
-      return Status::Ok();
-    case Compressor::GZIP:
-      return compress_tile_gzip(tile, level);
-    case Compressor::ZSTD:
-      return compress_tile_zstd(tile, level);
-    case Compressor::LZ4:
-      return compress_tile_lz4(tile, level);
-    case Compressor::BLOSC:
-      return compress_tile_blosc(tile, level, "blosclz");
-#undef BLOSC_LZ4
-    case Compressor::BLOSC_LZ4:
-      return compress_tile_blosc(tile, level, "lz4");
-#undef BLOSC_LZ4HC
-    case Compressor::BLOSC_LZ4HC:
-      return compress_tile_blosc(tile, level, "lz4hc");
-#undef BLOSC_SNAPPY
-    case Compressor::BLOSC_SNAPPY:
-      return compress_tile_blosc(tile, level, "snappy");
-#undef BLOSC_ZLIB
-    case Compressor::BLOSC_ZLIB:
-      return compress_tile_blosc(tile, level, "zlib");
-#undef BLOSC_ZSTD
-    case Compressor::BLOSC_ZSTD:
-      return compress_tile_blosc(tile, level, "zstd");
-    case Compressor::RLE:
-      return compress_tile_rle(tile);
-    case Compressor::BZIP2:
-      return compress_tile_bzip2(tile, level);
-    case Compressor::DOUBLE_DELTA:
-      return compress_tile_double_delta(tile);
-  }
-}
+  // Split coordinates
+  tile->split_coordinates();
 
-Status TileIO::compress_tile_gzip(Tile* tile, int level) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
-  uint64_t gzip_overhead = GZip::overhead(tile_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(tile_size + gzip_overhead);
-  if (tile_size + gzip_overhead > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(tile_size + gzip_overhead));
-
-  // Compress tile
-  RETURN_NOT_OK(GZip::compress(level, tile->buffer(), buffer_));
-
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_zstd(Tile* tile, int level) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
-  uint64_t compress_bound = ZStd::compress_bound(tile_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-
-  RETURN_NOT_OK(ZStd::compress(level, tile->buffer(), buffer_));
-
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_lz4(Tile* tile, int level) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
-  uint64_t compress_bound = LZ4::compress_bound(tile_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-
-  // Compress tile
-  RETURN_NOT_OK(LZ4::compress(level, tile->buffer(), buffer_));
-
-  // Success
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_blosc(
-    Tile* tile, int level, const char* compressor) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
-  uint64_t compress_bound = Blosc::compress_bound(tile_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-
-  // Compress tile
-  RETURN_NOT_OK(Blosc::compress(
-      compressor, datatype_size(tile->type()), level, tile->buffer(), buffer_));
-
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_rle(Tile* tile) {
-  uint64_t tile_size = tile->offset();
-  uint64_t value_size = tile->cell_size();
-  uint64_t compress_bound = RLE::compress_bound(tile_size, value_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-
-  // Compress tile
-  RETURN_NOT_OK(RLE::compress(value_size, tile->buffer(), buffer_));
-
-  // Success
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_bzip2(Tile* tile, int level) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
-  uint64_t compress_bound = BZip::compress_bound(tile_size);
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-
-  RETURN_NOT_OK(BZip::compress(level, tile->buffer(), buffer_));
-
-  return Status::Ok();
-}
-
-Status TileIO::compress_tile_double_delta(Tile* tile) {
-  // Allocate space to store the compressed tile
-  uint64_t tile_size = tile->offset();
+  // Compress each dimension tile
   auto dim_num = tile->dim_num();
-  auto batch_num = (dim_num == 0) ? 1 : dim_num;
-  uint64_t batch_size = tile_size / batch_num;
-  uint64_t compress_bound = tile_size + batch_num * DoubleDelta::OVERHEAD;
-
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(compress_bound);
-  if (compress_bound > buffer_->size())
-    RETURN_NOT_OK(buffer_->realloc(compress_bound));
-  buffer_->reset_offset();
-
+  auto dim_tile_size = tile->size() / dim_num;
+  auto coord_size = tile->cell_size() / dim_num;
   Status st;
-  for (unsigned int i = 0; i < batch_num; ++i) {
-    auto input_buffer =
-        new ConstBuffer((char*)tile->data() + i * batch_size, batch_size);
-    switch (tile->type()) {
-      case Datatype::CHAR:
-        st = DoubleDelta::compress<char>(input_buffer, buffer_);
+  for (unsigned int i = 0; i < dim_num; ++i) {
+    auto buff = new Buffer(tile->cur_data(), dim_tile_size, false);
+    auto dim_tile = new Tile(
+        tile->type(),
+        tile->compressor(),
+        tile->compression_level(),
+        coord_size,
+        dim_num,
+        buff,
+        false);
+    st = compress_one_tile(dim_tile);
+    delete buff;
+    delete dim_tile;
+    RETURN_NOT_OK(st);
+    tile->advance_offset(dim_tile_size);
+  }
+
+  return Status::Ok();
+}
+
+Status TileIO::compress_one_tile(Tile* tile) {
+  // For easy reference
+  auto level = tile->compression_level();
+  auto type_size = datatype_size(tile->type());
+  auto compressor = tile->compressor();
+  auto type = tile->type();
+  auto cell_size = tile->cell_size();
+  auto tile_size = tile->size();
+
+  // Compute necessary info for chunking
+  uint64_t chunk_num, max_chunk_size, overhead;
+  compute_chunking_info(tile, &chunk_num, &max_chunk_size, &overhead);
+
+  // Properly reallocate buffer
+  RETURN_NOT_OK(buffer_->realloc(buffer_->size() + tile_size + overhead));
+
+  // Write number of chunks
+  RETURN_NOT_OK(buffer_->write(&chunk_num, sizeof(uint64_t)));
+
+  // Compress in chunks
+  Status st;
+  uint64_t compressed_chunk_size = 0;
+  uint64_t buffer_offset;
+  uint64_t left_to_compress = tile_size;
+  for (uint64_t i = 0; i < chunk_num; ++i) {
+    // Write chunk info
+    auto chunk_size = MIN(left_to_compress, max_chunk_size);
+
+    RETURN_NOT_OK(buffer_->write(&chunk_size, sizeof(uint64_t)));
+    buffer_offset = buffer_->offset();  // Will be used later
+    RETURN_NOT_OK(buffer_->write(&compressed_chunk_size, sizeof(uint64_t)));
+
+    // Create const buffer
+    auto input_buffer = new ConstBuffer(tile->cur_data(), chunk_size);
+
+    // Invoke the proper compressor
+    switch (compressor) {
+      case Compressor::GZIP:
+        st = GZip::compress(level, input_buffer, buffer_);
         break;
-      case Datatype::INT8:
-        st = DoubleDelta::compress<int8_t>(input_buffer, buffer_);
+      case Compressor::ZSTD:
+        st = ZStd::compress(level, input_buffer, buffer_);
         break;
-      case Datatype::UINT8:
-        st = DoubleDelta::compress<uint8_t>(input_buffer, buffer_);
+      case Compressor::LZ4:
+        st = LZ4::compress(level, input_buffer, buffer_);
         break;
-      case Datatype::INT16:
-        st = DoubleDelta::compress<int16_t>(input_buffer, buffer_);
+      case Compressor::BLOSC:
+        st =
+            Blosc::compress("blosclz", type_size, level, input_buffer, buffer_);
         break;
-      case Datatype::UINT16:
-        st = DoubleDelta::compress<uint16_t>(input_buffer, buffer_);
+#undef BLOSC_LZ4
+      case Compressor::BLOSC_LZ4:
+        st = Blosc::compress("lz4", type_size, level, input_buffer, buffer_);
         break;
-      case Datatype::INT32:
-        st = DoubleDelta::compress<int>(input_buffer, buffer_);
+#undef BLOSC_LZ4HC
+      case Compressor::BLOSC_LZ4HC:
+        st = Blosc::compress("lz4hc", type_size, level, input_buffer, buffer_);
         break;
-      case Datatype::UINT32:
-        st = DoubleDelta::compress<uint32_t>(input_buffer, buffer_);
+#undef BLOSC_SNAPPY
+      case Compressor::BLOSC_SNAPPY:
+        st = Blosc::compress("snappy", type_size, level, input_buffer, buffer_);
         break;
-      case Datatype::INT64:
-        st = DoubleDelta::compress<int64_t>(input_buffer, buffer_);
+#undef BLOSC_ZLIB
+      case Compressor::BLOSC_ZLIB:
+        st = Blosc::compress("zlib", type_size, level, input_buffer, buffer_);
         break;
-      case Datatype::UINT64:
-        st = DoubleDelta::compress<uint64_t>(input_buffer, buffer_);
+#undef BLOSC_ZSTD
+      case Compressor::BLOSC_ZSTD:
+        st = Blosc::compress("zstd", type_size, level, input_buffer, buffer_);
+        break;
+      case Compressor::RLE:
+        st = RLE::compress(cell_size, input_buffer, buffer_);
+        break;
+      case Compressor::BZIP2:
+        st = BZip::compress(level, input_buffer, buffer_);
+        break;
+      case Compressor::DOUBLE_DELTA:
+        st = DoubleDelta::compress(type, input_buffer, buffer_);
         break;
       default:
-        st = LOG_STATUS(Status::TileIOError(
-            "Cannot compress tile with DoubleDelta; Not supported datatype"));
+        assert(0);
     }
 
     delete input_buffer;
     RETURN_NOT_OK(st);
+
+    // Write compressed chunk size
+    compressed_chunk_size =
+        buffer_->size() - (buffer_offset + sizeof(uint64_t));
+    std::memcpy(
+        buffer_->data(buffer_offset), &compressed_chunk_size, sizeof(uint64_t));
+
+    // Update
+    left_to_compress -= chunk_size;
+    tile->advance_offset(chunk_size);
+  }
+
+  assert(left_to_compress == 0);
+
+  return Status::Ok();
+}
+
+void TileIO::compute_chunking_info(
+    Tile* tile,
+    uint64_t* chunk_num,
+    uint64_t* max_chunk_size,
+    uint64_t* overhead) {
+  // For easy reference
+  auto cell_size = tile->cell_size();
+  auto tile_size = tile->size();
+
+  // Compute max chunk size. Along with the overhead, this should not
+  // exceed constants::tile_chunk_size.
+  *max_chunk_size = MIN(constants::tile_chunk_size, tile_size);
+  *max_chunk_size = *max_chunk_size / cell_size * cell_size;
+  uint64_t chunk_overhead = this->overhead(tile, *max_chunk_size);
+  assert(chunk_overhead + cell_size <= constants::tile_chunk_size);
+  *max_chunk_size -= chunk_overhead;
+  *max_chunk_size = (*max_chunk_size) / cell_size * cell_size;
+  chunk_overhead = this->overhead(tile, *max_chunk_size);
+  assert(*max_chunk_size + chunk_overhead <= constants::tile_chunk_size);
+
+  // Compute number of chunks
+  *chunk_num = tile_size / (*max_chunk_size) +
+               uint64_t(bool(tile_size % (*max_chunk_size)));
+
+  // Compute overhead: equal to the compression overhead per chunk, plus 2
+  // values per chunk that store the original and compressed chunk size,
+  // plus a single value in the beginning for the total number of chunks.
+  *overhead =
+      (*chunk_num) * chunk_overhead * 2 * sizeof(uint64_t) + sizeof(uint64_t);
+}
+
+Status TileIO::decompress_tile(Tile* tile) {
+  // Simple case - No coordinates
+  if (!tile->stores_coords())
+    return decompress_one_tile(tile);
+
+  // Decompress each dimension tile
+  auto dim_num = tile->dim_num();
+  for (unsigned int i = 0; i < dim_num; ++i)
+    RETURN_NOT_OK(decompress_one_tile(tile));
+
+  // Zip coordinates
+  tile->zip_coordinates();
+
+  return Status::Ok();
+}
+
+Status TileIO::decompress_one_tile(Tile* tile) {
+  // Read number of chunks
+  uint64_t chunk_num;
+
+  RETURN_NOT_OK(buffer_->read(&chunk_num, sizeof(uint64_t)));
+  assert(chunk_num > 0);
+
+  Status st;
+  Datatype type = tile->type();
+  for (uint64_t i = 0; i < chunk_num; ++i) {
+    // Read original and compressed chunk size
+    uint64_t chunk_size, compressed_chunk_size;
+    RETURN_NOT_OK(buffer_->read(&chunk_size, sizeof(uint64_t)));
+    RETURN_NOT_OK(buffer_->read(&compressed_chunk_size, sizeof(uint64_t)));
+
+    auto input_buffer =
+        new ConstBuffer(buffer_->cur_data(), compressed_chunk_size);
+
+    // Invoke the proper decompressor
+    switch (tile->compressor()) {
+      case Compressor::NO_COMPRESSION:
+        assert(0);
+        break;
+      case Compressor::GZIP:
+        st = GZip::decompress(input_buffer, tile->buffer());
+        break;
+      case Compressor::ZSTD:
+        st = ZStd::decompress(input_buffer, tile->buffer());
+        break;
+      case Compressor::LZ4:
+        st = LZ4::decompress(input_buffer, tile->buffer());
+        break;
+      case Compressor::BLOSC:
+#undef BLOSC_LZ4
+      case Compressor::BLOSC_LZ4:
+#undef BLOSC_LZ4HC
+      case Compressor::BLOSC_LZ4HC:
+#undef BLOSC_SNAPPY
+      case Compressor::BLOSC_SNAPPY:
+#undef BLOSC_ZLIB
+      case Compressor::BLOSC_ZLIB:
+#undef BLOSC_ZSTD
+      case Compressor::BLOSC_ZSTD:
+        st = Blosc::decompress(input_buffer, tile->buffer());
+        break;
+      case Compressor::RLE:
+        st = RLE::decompress(tile->cell_size(), input_buffer, tile->buffer());
+        break;
+      case Compressor::BZIP2:
+        st = BZip::decompress(input_buffer, tile->buffer());
+        break;
+      case Compressor::DOUBLE_DELTA:
+        st = DoubleDelta::decompress(type, input_buffer, tile->buffer());
+        break;
+    }
+
+    delete input_buffer;
+    RETURN_NOT_OK(st);
+
+    buffer_->advance_offset(compressed_chunk_size);
   }
 
   return st;
 }
 
-Status TileIO::decompress_tile(Tile* tile, uint64_t tile_size) {
-  Compressor compression = tile->compressor();
-
-  if (compression != Compressor::NO_COMPRESSION)
-    RETURN_NOT_OK(tile->alloc(tile_size));
-
-  switch (compression) {
+uint64_t TileIO::overhead(Tile* tile, uint64_t nbytes) const {
+  switch (tile->compressor()) {
     case Compressor::NO_COMPRESSION:
-      return Status::Ok();
+      return 0;
     case Compressor::GZIP:
-      return GZip::decompress(buffer_, tile->buffer());
+      return GZip::overhead(nbytes);
     case Compressor::ZSTD:
-      return ZStd::decompress(buffer_, tile->buffer());
+      return ZStd::overhead(nbytes);
     case Compressor::LZ4:
-      return LZ4::decompress(buffer_, tile->buffer());
+      return LZ4::overhead(nbytes);
     case Compressor::BLOSC:
 #undef BLOSC_LZ4
     case Compressor::BLOSC_LZ4:
@@ -348,66 +491,14 @@ Status TileIO::decompress_tile(Tile* tile, uint64_t tile_size) {
     case Compressor::BLOSC_ZLIB:
 #undef BLOSC_ZSTD
     case Compressor::BLOSC_ZSTD:
-      return Blosc::decompress(buffer_, tile->buffer());
+      return Blosc::overhead(nbytes);
     case Compressor::RLE:
-      return RLE::decompress(tile->cell_size(), buffer_, tile->buffer());
+      return RLE::overhead(nbytes, tile->cell_size());
     case Compressor::BZIP2:
-      return BZip::decompress(buffer_, tile->buffer());
+      return BZip::overhead(nbytes);
     case Compressor::DOUBLE_DELTA:
-      return decompress_tile_double_delta(tile, tile_size);
+      return DoubleDelta::overhead(nbytes);
   }
-}
-
-Status TileIO::decompress_tile_double_delta(Tile* tile, uint64_t tile_size) {
-  auto dim_num = tile->dim_num();
-  auto batch_num = (dim_num == 0) ? 1 : dim_num;
-
-  Status st;
-  auto input_buffer = new ConstBuffer(buffer_->data(), buffer_->size());
-  for (unsigned int i = 0; i < batch_num; ++i) {
-    switch (tile->type()) {
-      case Datatype::CHAR:
-        st = DoubleDelta::decompress<char>(input_buffer, tile->buffer());
-        break;
-      case Datatype::INT8:
-        st = DoubleDelta::decompress<int8_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::UINT8:
-        st = DoubleDelta::decompress<uint8_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::INT16:
-        st = DoubleDelta::decompress<int16_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::UINT16:
-        st = DoubleDelta::decompress<uint16_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::INT32:
-        st = DoubleDelta::decompress<int>(input_buffer, tile->buffer());
-        break;
-      case Datatype::UINT32:
-        st = DoubleDelta::decompress<uint32_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::INT64:
-        st = DoubleDelta::decompress<int64_t>(input_buffer, tile->buffer());
-        break;
-      case Datatype::UINT64:
-        st = DoubleDelta::decompress<uint64_t>(input_buffer, tile->buffer());
-        break;
-      default:
-        st = LOG_STATUS(Status::TileIOError(
-            "Cannot decompress tile with DoubleDelta; Not supported datatype"));
-    }
-    RETURN_NOT_OK_ELSE(st, delete input_buffer);
-  }
-
-  assert(tile->size() == tile_size);
-  assert(input_buffer->offset() == buffer_->size());
-
-  tile->reset_offset();
-
-  delete input_buffer;
-
-  return st;
 }
 
 }  // namespace tiledb

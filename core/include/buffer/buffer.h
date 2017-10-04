@@ -35,10 +35,11 @@
 
 #include <cinttypes>
 
-#include "const_buffer.h"
 #include "status.h"
 
 namespace tiledb {
+
+class ConstBuffer;
 
 /** Enables reading from and writing to a buffer. */
 class Buffer {
@@ -50,8 +51,16 @@ class Buffer {
   /** Constructor. */
   Buffer();
 
-  /** Constructor that allocates memory with the input size. */
-  explicit Buffer(uint64_t size);
+  /**
+   * Constructor. Initializes a buffer with the input data and size.
+   *
+   * @param data The internal data of the buffer.
+   * @param size The size of the data.
+   * @param owns_data Indicates whether the object will own the data,
+   *     i.e., if it has permission to reallocate the data and
+   *     is responsible for freeing it.
+   */
+  Buffer(void* data, uint64_t size, bool owns_data);
 
   /** Destructor. */
   ~Buffer();
@@ -60,14 +69,29 @@ class Buffer {
   /*                API                */
   /* ********************************* */
 
-  /** Advances the buffer offset. */
+  /** Advances the offset by *nbytes*. */
   void advance_offset(uint64_t nbytes);
+
+  /** Advances the size by *nbytes*. */
+  void advance_size(uint64_t nbytes);
+
+  /** Returns the allocated buffer size. */
+  uint64_t alloced_size() const;
 
   /** Clears the buffer, deallocating memory. */
   void clear();
 
+  /** Returns the buffer data pointer at the current offset. */
+  void* cur_data() const;
+
   /** Returns the buffer data. */
   void* data() const;
+
+  /** Returns the buffer data pointer at the input offset. */
+  void* data(uint64_t offset) const;
+
+  /** Returns the number of byte of free space in the buffer. */
+  uint64_t free_space() const;
 
   /** Returns the current offset in the buffer. */
   uint64_t offset() const;
@@ -92,10 +116,13 @@ class Buffer {
   /** Resets the buffer offset to 0. */
   void reset_offset();
 
+  /** Resets the buffer size. */
+  void reset_size();
+
   /** Sets the buffer offset to the input offset. */
   void set_offset(uint64_t offset);
 
-  /** Sets the size of the buffer. */
+  /** Sets the buffer size. */
   void set_size(uint64_t size);
 
   /** Returns the buffer size. */
@@ -164,11 +191,20 @@ class Buffer {
   /*         PRIVATE ATTRIBUTES        */
   /* ********************************* */
 
+  /** The allocated buffer size. */
+  uint64_t alloced_size_;
+
   /** The buffer data. */
   void* data_;
 
   /** The current buffer offset. */
   uint64_t offset_;
+
+  /**
+   * True if the object owns the data buffer, which means that it is
+   * responsible for allocating and freeing it.
+   */
+  bool owns_data_;
 
   /** Buffer allocated size. */
   uint64_t size_;

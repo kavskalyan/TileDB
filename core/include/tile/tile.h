@@ -68,7 +68,32 @@ class Tile {
    * @param type The type of the data to be stored.
    * @param compression The compression type.
    * @param compression_level The compression level.
-   * @param tile_size The tile size.
+   * @param cell_size The cell size.
+   * @param dim_num The number of dimensions in case the tile stores
+   *      coordinates.
+   * @param buff  The buffer to be encapsulated by the tile object. This
+   *     means that the tile will not create a new buffer object, but
+   *     operate directly on the input.
+   * @param owns_buff If *true* the tile object will delete *buff* upon
+   *     destruction, otherwise it will not delete it.
+   */
+  Tile(
+      Datatype type,
+      Compressor compression,
+      int compression_level,
+      uint64_t cell_size,
+      unsigned int dim_num,
+      Buffer* buff,
+      bool owns_buff);
+
+  /**
+   * Constructor.
+   *
+   * @param type The type of the data to be stored.
+   * @param compression The compression type.
+   * @param compression_level The compression level.
+   * @param tile_size The tile size. The internal buffer will be allocated
+   *     that much space upon construction.
    * @param cell_size The cell size.
    * @param dim_num The number of dimensions in case the tile stores
    *      coordinates.
@@ -103,8 +128,8 @@ class Tile {
   /*                API                */
   /* ********************************* */
 
-  /** Allocates memory of the input size. */
-  Status alloc(uint64_t size);
+  /** Advances the buffer offset. */
+  void advance_offset(uint64_t nbytes);
 
   /** Returns the internal buffer. */
   Buffer* buffer() const;
@@ -117,6 +142,9 @@ class Tile {
 
   /** Returns the tile compression level. */
   int compression_level() const;
+
+  /** Returns the buffer data pointer at the current offset. */
+  void* cur_data() const;
 
   /** Returns the tile data. */
   void* data() const;
@@ -133,14 +161,23 @@ class Tile {
   /** The current offset in the tile. */
   uint64_t offset() const;
 
+  /** Reallocates nbytes for the internal tile buffer. */
+  Status realloc(uint64_t nbytes);
+
   /** Reads from the tile into the input buffer *nbytes*. */
   Status read(void* buffer, uint64_t nbytes);
 
   /** Resets the tile offset. */
   void reset_offset();
 
+  /** Resets the tile size. */
+  void reset_size();
+
   /** Sets the tile offset. */
   void set_offset(uint64_t offset);
+
+  /** Sets the internal buffer size. */
+  void set_size(uint64_t size);
 
   /** Returns the tile size. */
   uint64_t size() const;
@@ -215,11 +252,11 @@ class Tile {
    */
   unsigned int dim_num_;
 
-  /** The current offset in the tile. */
-  uint64_t offset_;
-
-  /** The tile size. */
-  uint64_t tile_size_;
+  /**
+   * If *true* the tile object will delete *buff* upon
+   * destruction, otherwise it will not delete it.
+   */
+  bool owns_buff_;
 
   /** The tile data type. */
   Datatype type_;

@@ -47,9 +47,25 @@ Tile::Tile(unsigned int dim_num) {
   compressor_ = Compressor::NO_COMPRESSION;
   compression_level_ = -1;
   dim_num_ = dim_num;
-  offset_ = 0;
-  tile_size_ = 0;
+  owns_buff_ = true;
   type_ = Datatype::INT32;
+}
+
+Tile::Tile(
+    Datatype type,
+    Compressor compressor,
+    int compression_level,
+    uint64_t cell_size,
+    unsigned int dim_num,
+    Buffer* buff,
+    bool owns_buff)
+    : buffer_(buff)
+    , cell_size_(cell_size)
+    , compressor_(compressor)
+    , compression_level_(compression_level)
+    , dim_num_(dim_num)
+    , owns_buff_(owns_buff)
+    , type_(type) {
 }
 
 Tile::Tile(
@@ -63,10 +79,10 @@ Tile::Tile(
     , compressor_(compressor)
     , compression_level_(compression_level)
     , dim_num_(dim_num)
-    , tile_size_(tile_size)
     , type_(type) {
-  buffer_ = nullptr;
-  offset_ = 0;
+  buffer_ = new Buffer();
+  buffer_->realloc(tile_size);
+  owns_buff_ = true;
 }
 
 Tile::Tile(
@@ -78,29 +94,22 @@ Tile::Tile(
     , compressor_(compressor)
     , dim_num_(dim_num)
     , type_(type) {
-  buffer_ = nullptr;
-  offset_ = 0;
-  tile_size_ = 0;
+  buffer_ = new Buffer();
+  compression_level_ = -1;
+  owns_buff_ = true;
 }
 
 Tile::~Tile() {
-  delete buffer_;
+  if (owns_buff_)
+    delete buffer_;
 }
 
 /* ****************************** */
 /*               API              */
 /* ****************************** */
 
-Status Tile::alloc(uint64_t size) {
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(size);
-  else {
-    buffer_->realloc(size);
-    buffer_->reset_offset();
-  }
-  tile_size_ = size;
-
-  return Status::Ok();
+void Tile::advance_offset(uint64_t nbytes) {
+  buffer_->advance_offset(nbytes);
 }
 
 Buffer* Tile::buffer() const {
@@ -119,10 +128,11 @@ int Tile::compression_level() const {
   return compression_level_;
 }
 
-void* Tile::data() const {
-  if (buffer_ == nullptr)
-    return nullptr;
+void* Tile::cur_data() const {
+  return buffer_->cur_data();
+}
 
+void* Tile::data() const {
   return buffer_->data();
 }
 
@@ -131,58 +141,60 @@ unsigned int Tile::dim_num() const {
 }
 
 bool Tile::empty() const {
-  return buffer_ == nullptr || buffer_->offset() == 0;
+  return buffer_->size() == 0;
 }
 
 bool Tile::full() const {
-  if (buffer_ == nullptr)
-    return false;
-
-  return buffer_->offset() == buffer_->size();
+  return (buffer_->size() != 0) &&
+         (buffer_->offset() == buffer_->alloced_size());
 }
 
 uint64_t Tile::offset() const {
-  return offset_;
+  return buffer_->offset();
+}
+
+Status Tile::realloc(uint64_t nbytes) {
+  return buffer_->realloc(nbytes);
 }
 
 Status Tile::read(void* buffer, uint64_t nbytes) {
-  if (buffer_ == nullptr)
-    return LOG_STATUS(
-        Status::BufferError("Cannot read from tile; Invalid buffer"));
-
   RETURN_NOT_OK(buffer_->read(buffer, nbytes));
-  offset_ = buffer_->offset();
 
   return Status::Ok();
 }
 
 void Tile::reset_offset() {
-  if (buffer_ != nullptr)
-    buffer_->reset_offset();
-  offset_ = 0;
+  buffer_->reset_offset();
+}
+
+void Tile::reset_size() {
+  buffer_->reset_size();
 }
 
 void Tile::set_offset(uint64_t offset) {
-  if (buffer_ != nullptr)
-    buffer_->set_offset(offset);
-  offset_ = offset;
+  buffer_->set_offset(offset);
+}
+
+void Tile::set_size(uint64_t size) {
+  buffer_->set_size(size);
 }
 
 uint64_t Tile::size() const {
-  return tile_size_;
+  return buffer_->size();
 }
 void Tile::split_coordinates() {
   assert(dim_num_ > 0);
 
   // For easy reference
+  uint64_t tile_size = buffer_->size();
   uint64_t coord_size = cell_size_ / dim_num_;
-  uint64_t cell_num = tile_size_ / cell_size_;
+  uint64_t cell_num = tile_size / cell_size_;
   auto tile_c = (char*)buffer_->data();
   uint64_t ptr = 0, ptr_tmp = 0;
 
   // Create a tile clone
-  auto tile_tmp = (char*)malloc(tile_size_);
-  std::memcpy(tile_tmp, tile_c, tile_size_);
+  auto tile_tmp = (char*)malloc(tile_size);
+  std::memcpy(tile_tmp, tile_c, tile_size);
 
   // Split coordinates
   for (unsigned int j = 0; j < dim_num_; ++j) {
@@ -207,43 +219,19 @@ Datatype Tile::type() const {
 }
 
 Status Tile::write(ConstBuffer* buf) {
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(tile_size_);
-
-  if (buffer_->size() == 0)
-    LOG_STATUS(
-        Status::TileError("Cannot write into tile; Buffer allocation failed"));
-
   buffer_->write(buf);
-  offset_ = buffer_->offset();
 
   return Status::Ok();
 }
 
 Status Tile::write(ConstBuffer* buf, uint64_t nbytes) {
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(tile_size_);
-
-  if (buffer_->size() == 0)
-    LOG_STATUS(
-        Status::TileError("Cannot write into tile; Buffer allocation failed"));
-
   RETURN_NOT_OK(buffer_->write(buf, nbytes));
-  offset_ = buffer_->offset();
 
   return Status::Ok();
 }
 
 Status Tile::write_with_shift(ConstBuffer* buf, uint64_t offset) {
-  if (buffer_ == nullptr)
-    buffer_ = new Buffer(tile_size_);
-
-  if (buffer_->size() == 0)
-    LOG_STATUS(
-        Status::TileError("Cannot write into tile; Buffer allocation failed"));
-
   buffer_->write_with_shift(buf, offset);
-  offset_ = buffer_->offset();
 
   return Status::Ok();
 }
@@ -252,14 +240,15 @@ void Tile::zip_coordinates() {
   assert(dim_num_ > 0);
 
   // For easy reference
+  uint64_t tile_size = buffer_->size();
   uint64_t coord_size = cell_size_ / dim_num_;
-  uint64_t cell_num = tile_size_ / cell_size_;
+  uint64_t cell_num = tile_size / cell_size_;
   auto tile_c = (char*)buffer_->data();
   uint64_t ptr = 0, ptr_tmp = 0;
 
   // Create a tile clone
-  auto tile_tmp = (char*)malloc(tile_size_);
-  std::memcpy(tile_tmp, tile_c, tile_size_);
+  auto tile_tmp = (char*)malloc(tile_size);
+  std::memcpy(tile_tmp, tile_c, tile_size);
 
   // Zip coordinates
   for (unsigned int j = 0; j < dim_num_; ++j) {

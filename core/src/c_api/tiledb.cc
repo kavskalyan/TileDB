@@ -53,9 +53,9 @@ unsigned int tiledb_var_num() {
 /* ****************************** */
 
 void tiledb_version(int* major, int* minor, int* rev) {
-  *major = TILEDB_VERSION_MAJOR;
-  *minor = TILEDB_VERSION_MINOR;
-  *rev = TILEDB_VERSION_REVISION;
+  *major = tiledb::constants::version[0];
+  *minor = tiledb::constants::version[1];
+  *rev = tiledb::constants::version[2];
 }
 
 /* ********************************* */
@@ -544,6 +544,10 @@ int tiledb_domain_dump(
   return TILEDB_OK;
 }
 
+/* ********************************* */
+/*             DIMENSION             */
+/* ********************************* */
+
 int tiledb_dimension_get_name(
     tiledb_ctx_t* ctx, const tiledb_dimension_t* dim, const char** name) {
   if (sanity_check(ctx) == TILEDB_ERR || sanity_check(ctx, dim) == TILEDB_ERR)
@@ -577,6 +581,10 @@ int tiledb_dimension_dump(
   dim->dim_->dump(out);
   return TILEDB_OK;
 }
+
+/* ********************************* */
+/*        DIMENSION ITERATOR         */
+/* ********************************* */
 
 int tiledb_dimension_iter_create(
     tiledb_ctx_t* ctx,
@@ -869,7 +877,8 @@ int tiledb_array_metadata_load(
   }
 
   // Create ArrayMetadata object
-  (*array_metadata)->array_metadata_ = new tiledb::ArrayMetadata();
+  (*array_metadata)->array_metadata_ =
+      new tiledb::ArrayMetadata(tiledb::URI(array_name));
   if ((*array_metadata)->array_metadata_ == nullptr) {
     std::free(*array_metadata);
     *array_metadata = nullptr;
