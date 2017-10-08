@@ -35,7 +35,7 @@
 #include "array_metadata.h"
 #include "query.h"
 #include "utils.h"
-
+#include "../../include/filesystem/vfs.h"
 /* ****************************** */
 /*            CONSTANTS           */
 /* ****************************** */
@@ -1352,7 +1352,9 @@ int tiledb_array_create(
 
   return TILEDB_OK;
 }
-
+void print_file_io_summary(){
+  FileIOLogger::file_io_summary();
+}
 /*
 int tiledb_array_consolidate(tiledb_ctx_t* ctx, const char* array_name) {
   // TODO: sanity checks here

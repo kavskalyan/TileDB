@@ -1019,6 +1019,7 @@ TILEDB_EXPORT int tiledb_query_get_attribute_status(
 TILEDB_EXPORT int tiledb_array_create(
     tiledb_ctx_t* ctx, const tiledb_array_metadata_t* array_metadata);
 
+TILEDB_EXPORT void print_file_io_summary();
 /**
  * Consolidates the fragments of an array into a single fragment.
  *

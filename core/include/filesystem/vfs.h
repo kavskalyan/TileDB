@@ -39,7 +39,46 @@
 
 #include <string>
 #include <vector>
+#include <iostream>
 
+class FileIOLogger{
+public:
+  static inline void log_file_io(const std::string log){
+    std::cout << log << std::endl;
+  }
+  static int abs_path;
+  static int create_dir;
+  static int create_file;
+  static int delete_file;
+  static int file_lock;
+  static int file_unlock;
+  static int file_size;
+  static int is_dir;
+  static int is_file;
+  static int ls;
+  static int move_dir;
+  static int read_from_file;
+  static int write_to_file;
+  static int sync;
+
+  static inline void file_io_summary(){
+    std::cout << "abs_path:" << abs_path << std::endl;
+    std::cout << "create_dir:" << create_dir << std::endl;
+    std::cout << "create_file:" << create_file << std::endl;
+    std::cout << "delete_file:" << delete_file << std::endl;
+    std::cout << "file_lock:" << file_lock << std::endl;
+    std::cout << "file_unlock:" << file_unlock << std::endl;
+    std::cout << "file_size:" << file_size << std::endl;
+    std::cout << "is_dir:" << is_dir << std::endl;
+    std::cout << "is_file:" << is_file << std::endl;
+    std::cout << "ls:" << ls << std::endl;
+    std::cout << "move_dir:" << move_dir << std::endl;
+    std::cout << "read_from_file:" << read_from_file << std::endl;
+    std::cout << "write_to_file:" << write_to_file << std::endl;
+    std::cout << "sync:" << sync << std::endl;
+  }
+
+};
 namespace tiledb {
 
 /**
