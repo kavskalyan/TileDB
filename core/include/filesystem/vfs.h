@@ -40,6 +40,10 @@
 #include <string>
 #include <vector>
 
+#ifdef HAVE_HDFS
+#include "hdfs.h"
+#endif
+
 namespace tiledb {
 
 /**
@@ -86,6 +90,14 @@ class VFS {
    * @return Status
    */
   Status create_file(const URI& uri) const;
+
+  /**
+   * Deletes a directory.
+   *
+   * @param uri The URI of the directory to be deleted.
+   * @return Status
+   */
+  Status delete_dir(const URI& uri) const;
 
   /**
    * Deletes a file.
@@ -203,6 +215,9 @@ class VFS {
   /* ********************************* */
   /*         PRIVATE ATTRIBUTES        */
   /* ********************************* */
+#ifdef HAVE_HDFS
+  hdfsFS hdfs_;
+#endif
 };
 
 }  // namespace tiledb

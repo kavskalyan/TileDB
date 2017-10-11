@@ -1,5 +1,5 @@
 /**
- * @file   tiledb_consolidate.cc
+ * @file   tiledb_3d_create_csv.cc
  *
  * @section LICENSE
  *
@@ -27,21 +27,36 @@
  *
  * @section DESCRIPTION
  *
- * It shows how to consolidate arrays.
+ * Creates a CSV file FILENAME, where each line in the CSV file must be of
+ * the form:
+ *
+ * <coord_1> <coord_2> <coord_3> <attribute_value>
+ *
+ * CELL_NUM random tuples with the above format are generated.
  */
 
-#include "tiledb.h"
+#include <fstream>
+#include <random>
+
+#define CELL_NUM 10
+#define DIM_NUM 3
+#define FILENAME "file.csv"
+#define COORD_MAX 10000
+#define ATTR_MAX 10000
 
 int main() {
-  // Initialize context with the default configuration parameters
-  tiledb_ctx_t* ctx;
-  tiledb_ctx_create(&ctx);
+  std::random_device rd;
+  std::default_random_engine gen(rd());
+  std::uniform_int_distribution<long long unsigned> dist(1, 10000000000);
 
-  // Consolidate the dense array_metadata
-  tiledb_array_consolidate(ctx, "my_dense_array");
+  std::ofstream file(FILENAME);
+  for (uint64_t i = 0; i < CELL_NUM; ++i) {
+    for (int i = 0; i < DIM_NUM; ++i)
+      file << (dist(gen) % COORD_MAX) << " ";
+    file << (dist(gen) % ATTR_MAX) << "\n";
+  }
 
-  // Finalize context
-  tiledb_ctx_free(ctx);
+  file.close();
 
   return 0;
 }
