@@ -1,5 +1,5 @@
 /**
- * @file   tiledb_error.cc
+ * @file   tiledb_move.cc
  *
  * @section LICENSE
  *
@@ -28,48 +28,29 @@
  *
  * @section DESCRIPTION
  *
- * This example shows how to catch errors. Program output:
- *
- * $ ./tiledb_error
- * Group created successfully!
- * [TileDB::OS] Error: Cannot create directory \
- * '<current_working_dir>/my_group'; Directory already exists
+ * It shows how to move/rename a TileDB resource.
  */
 
 #include <tiledb.h>
-
-void print_error(tiledb_ctx_t* ctx);
+#include <iostream>
 
 int main() {
-  // Create TileDB context
+  // Create context
   tiledb_ctx_t* ctx;
   tiledb_ctx_create(&ctx);
 
-  // Create a group
-  int rc = tiledb_group_create(ctx, "my_group");
-  if (rc == TILEDB_OK)
-    printf("Group created successfully!\n");
-  else if (rc == TILEDB_ERR)
-    print_error(ctx);
+  // Rename a valid group and array
+  tiledb_move(ctx, "my_group", "my_group_2", true);
+  tiledb_move(
+      ctx, "my_dense_array", "my_group_2/dense_arrays/my_dense_array", false);
 
-  // Create the same group again - ERROR
-  rc = tiledb_group_create(ctx, "my_group");
-  if (rc == TILEDB_OK)
-    printf("Group created successfully!\n");
-  else if (rc == TILEDB_ERR)
-    print_error(ctx);
+  // Rename an invalid path
+  int rc = tiledb_move(ctx, "some_invalid_path", "path", false);
+  if (rc == TILEDB_ERR)
+    std::cout << "Failed moving invalid path\n";
 
   // Clean up
   tiledb_ctx_free(ctx);
 
   return 0;
-}
-
-void print_error(tiledb_ctx_t* ctx) {
-  tiledb_error_t* err;
-  tiledb_error_last(ctx, &err);
-  const char* msg;
-  tiledb_error_message(ctx, err, &msg);
-  printf("%s\n", msg);
-  tiledb_error_free(ctx, err);
 }

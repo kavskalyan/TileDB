@@ -1,10 +1,11 @@
 /**
- * @file   tiledb_write_dense_2.cc
+ * @file   tiledb_dense_write_global_subarray.cc
  *
  * @section LICENSE
  *
  * The MIT License
  *
+ * @copyright Copyright (c) 2017 TileDB, Inc.
  * @copyright Copyright (c) 2016 MIT and Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,34 +28,37 @@
  *
  * @section DESCRIPTION
  *
- * It shows how to write to a dense array invoking the write function
- * multiple times. This will have the same effect as program
- * tiledb_array_write_dense_1.cc.
+ * It shows how to write a dense subarray in the global cell order.
+ * Make sure that there is not directory named "my_dense_array" in your current
+ * working directory.
+ *
+ * You need to run the following to make this work:
+ *
+ * ./tiledb_dense_create
+ * ./tiledb_dense_write_global_subarray
  */
 
-#include "tiledb.h"
-
-#include <iostream>
+#include <tiledb.h>
 
 int main() {
   // Initialize context with the default configuration parameters
   tiledb_ctx_t* ctx;
   tiledb_ctx_create(&ctx);
 
-  // Prepare cell buffers - #1
-  int buffer_a1[] = {0, 1, 2, 3, 4, 5};
-  uint64_t buffer_a2[] = {0, 1, 3, 6, 10, 11, 13, 16};
-  char buffer_var_a2[] = "abbcccddddeffggghhhh";
-  float* buffer_a3 = nullptr;
+  // Prepare cell buffers
+  int buffer_a1[] = {112, 113, 114, 115};
+  uint64_t buffer_a2[] = {0, 1, 3, 6};
+  char buffer_var_a2[] = "MNNOOOPPPP";
+  float buffer_a3[] = {112.1, 112.2, 113.1, 113.2, 114.1, 114.2, 115.1, 115.2};
   void* buffers[] = {buffer_a1, buffer_a2, buffer_var_a2, buffer_a3};
   uint64_t buffer_sizes[] = {
-      6 * sizeof(int),  // 6 cels on a1
-      8 * sizeof(size_t),
-      20,  // 8 cells on a2
-      0    // no cells on a3
-  };
+      sizeof(buffer_a1),
+      sizeof(buffer_a2),
+      sizeof(buffer_var_a2) - 1,  // No need to store the last '\0' character
+      sizeof(buffer_a3)};
 
   // Create query
+  int64_t subarray[] = {3, 4, 3, 4};
   tiledb_query_t* query;
   tiledb_query_create(
       ctx,
@@ -62,35 +66,13 @@ int main() {
       "my_dense_array",
       TILEDB_WRITE,
       TILEDB_GLOBAL_ORDER,
-      nullptr,
+      subarray,
       nullptr,
       0,
       buffers,
       buffer_sizes);
 
-  // Submit query - #1
-  tiledb_query_submit(ctx, query);
-
-  // Prepare cell buffers - #2
-  int buffer_a1_2[] = {6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-  uint64_t buffer_a2_2[] = {0, 1, 3, 6, 10, 11, 13, 16};
-  char buffer_var_a2_2[] = "ijjkkkllllmnnooopppp";
-  float buffer_a3_2[] = {
-      0.1,  0.2,  1.1,  1.2,  2.1,  2.2,  3.1,  3.2,   // Upper left tile
-      4.1,  4.2,  5.1,  5.2,  6.1,  6.2,  7.1,  7.2,   // Upper right tile
-      8.1,  8.2,  9.1,  9.2,  10.1, 10.2, 11.1, 11.2,  // Lower left tile
-      12.1, 12.2, 13.1, 13.2, 14.1, 14.2, 15.1, 15.2,  // Lower right tile
-  };
-  void* buffers_2[] = {buffer_a1_2, buffer_a2_2, buffer_var_a2_2, buffer_a3_2};
-  uint64_t buffer_sizes_2[] = {
-      10 * sizeof(int),  // 6 cels on a1
-      8 * sizeof(size_t),
-      20,                 // 8 cells on a2
-      32 * sizeof(float)  // 16 cells on a3 (2 values each)
-  };
-
-  // Submit query - #2
-  tiledb_query_reset_buffers(ctx, query, buffers_2, buffer_sizes_2);
+  // Submit query
   tiledb_query_submit(ctx, query);
 
   // Clean up

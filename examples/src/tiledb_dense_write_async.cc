@@ -1,10 +1,11 @@
 /**
- * @file   tiledb_async_write_dense.cc
+ * @file   tiledb_dense_write_async.cc
  *
  * @section LICENSE
  *
  * The MIT License
  *
+ * @copyright Copyright (c) 2017 TileDB, Inc.
  * @copyright Copyright (c) 2016 MIT and Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28,20 +29,21 @@
  * @section DESCRIPTION
  *
  * It shows how to write asynchronoulsy to a dense array. The case of sparse
- * array is similar.
+ * arrays is similar.
+ *
+ * You need to run the following to make this work:
+ *
+ * $ ./tiledb_dense_create
+ * # ./tiledb_dense_write_async
  */
 
-#include "tiledb.h"
+#include <tiledb.h>
 
 // Simply prints the input string to stdout
-void* print_upon_completion(void* s) {
-  printf("%s\n", (char*)s);
-
-  return nullptr;
-}
+void* print_upon_completion(void* s);
 
 int main() {
-  // Initialize context with the default configuration parameters
+  // Create TileDB context
   tiledb_ctx_t* ctx;
   tiledb_ctx_create(&ctx);
 
@@ -113,4 +115,10 @@ int main() {
   tiledb_ctx_free(ctx);
 
   return 0;
+}
+
+void* print_upon_completion(void* s) {
+  printf("%s\n", (char*)s);
+
+  return nullptr;
 }

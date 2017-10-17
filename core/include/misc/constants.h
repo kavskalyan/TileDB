@@ -69,6 +69,9 @@ extern int cell_var_offsets_compression_level;
 /** The default compressor for the coordinates. */
 extern Compressor coords_compression;
 
+/** The default compressor for real coordinates. */
+extern Compressor real_coords_compression;
+
 /** The default compression level for the coordinates. */
 extern int coords_compression_level;
 
@@ -110,9 +113,6 @@ extern const uint64_t empty_uint64;
 
 /** The file suffix used in TileDB. */
 extern const char* file_suffix;
-
-/** The fragment file name. */
-extern const char* fragment_filename;
 
 /** The fragment metadata file name. */
 extern const char* fragment_metadata_filename;

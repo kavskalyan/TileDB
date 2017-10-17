@@ -70,6 +70,9 @@ int cell_var_offsets_compression_level = -1;
 /** The default compressor for the coordinates. */
 Compressor coords_compression = Compressor::DOUBLE_DELTA;
 
+/** The default compressor for real coordinates. */
+Compressor real_coords_compression = Compressor::BLOSC_ZSTD;
+
 /** The default compression level for the coordinates. */
 int coords_compression_level = -1;
 
@@ -114,9 +117,6 @@ const uint64_t empty_uint64 = UINT64_MAX;
 
 /** The file suffix used in TileDB. */
 const char* file_suffix = ".tdb";
-
-/** The fragment file name. */
-const char* fragment_filename = "__tiledb_fragment.tdb";
 
 /** Default datatype for a generic tile. */
 const Datatype generic_tile_datatype = Datatype::CHAR;

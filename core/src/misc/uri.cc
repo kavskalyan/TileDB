@@ -70,12 +70,12 @@ bool URI::is_invalid() const {
 }
 
 bool URI::is_posix(const std::string& path) {
-  return utils::starts_with(path, "file://") ||
+  return utils::starts_with(path, "file:///") ||
          path.find("://") == std::string::npos;
 }
 
 bool URI::is_posix() const {
-  return utils::starts_with(uri_, "file://");
+  return utils::starts_with(uri_, "file:///");
 }
 
 bool URI::is_hdfs(const std::string& path) {

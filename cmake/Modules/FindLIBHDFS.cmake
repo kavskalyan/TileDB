@@ -49,24 +49,6 @@ if(NOT LIBHDFS_FOUND)
 	     "/usr/include")
     endif()
 
-    message(STATUS "Searching for JVM and JNI paths")
-    find_package(JNI)
-
-    if(JAVA_JVM_LIBRARY)
-        message(STATUS "Found libjvm library: ${JAVA_JVM_LIBRARY}")
-    else()
-        message(STATUS "libjvm library not found")
-    endif()
-    IF ( "${JAVA_HOME}" STREQUAL "" )
-      MESSAGE("---JAVA_HOME not specified")
-    ELSE ()
-      LIST (APPEND POSSILE_PATHS_JVM
-          "${JAVA_HOME}"
-          "${JAVA_HOME}/lib/amd64/server/"
-        )
-    ENDIF()
-FIND_FILE (JVM_LIBRARIES NAMES libjvm.so PATHS ${POSSILE_PATHS_JVM} NO_DEFAULT_PATH)
-
     find_path(LIBHDFS_INCLUDE_DIR NAMES hdfs.h PATHS ${POSSILE_PATHS} NO_DEFAULT_PATH)
 
     find_library(LIBHDFS_LIBRARY NAMES
@@ -75,16 +57,16 @@ FIND_FILE (JVM_LIBRARIES NAMES libjvm.so PATHS ${POSSILE_PATHS_JVM} NO_DEFAULT_P
 	PATHS ${POSSILE_PATHS}
         NO_DEFAULT_PATH)
 
-    if(LIBHDFS_LIBRARY)
-	message(STATUS "Found libhdfs library: ${LIBHDFS_LIBRARY}")
-    else()
-        message(STATUS "libhdfs library not found")
-    endif()
-
     if(LIBHDFS_INCLUDE_DIR)
 	message(STATUS "Found hdfs.h header file: ${LIBHDFS_INCLUDE_DIR}")
     else()
         message(STATUS "hdfs.h header file not found")
+    endif()
+
+    if(LIBHDFS_LIBRARY)
+	message(STATUS "Found libhdfs library: ${LIBHDFS_LIBRARY}")
+    else()
+        message(STATUS "libhdfs library not found")
     endif()
 
     if(JAVA_JVM_LIBRARY AND LIBHDFS_LIBRARY AND LIBHDFS_INCLUDE_DIR)

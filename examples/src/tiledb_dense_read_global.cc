@@ -1,10 +1,11 @@
 /**
- * @file   tiledb_read_sparse_sorted.cc
+ * @file   tiledb_dense_read_global.cc
  *
  * @section LICENSE
  *
  * The MIT License
  *
+ * @copyright Copyright (c) 2017 TileDB, Inc.
  * @copyright Copyright (c) 2016 MIT and Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,61 +28,66 @@
  *
  * @section DESCRIPTION
  *
- * It shows how to read from a sparse array, constraining the read
- * to a specific subarray and subset of attributes. This time the cells are
- * returned in row-major order within the specified subarray.
+ * It shows how to read a complete dense array in the global cell order.
+ *
+ * You need to run the following to make it work:
+ *
+ * $ ./tiledb_dense_create
+ * $ ./tiledb_dense_write_global_1
+ * $ ./tiledb_dense_read_global
  */
 
+#include <tiledb.h>
 #include <cstdio>
-#include "tiledb.h"
 
-int main() {
-  // Initialize context with the default configuration parameters
+#include <cstdlib>
+
+int main(int argc, char** argv) {
+  // Create TileDB context
   tiledb_ctx_t* ctx;
   tiledb_ctx_create(&ctx);
 
-  // Subarray and attributes
-  int64_t subarray[] = {3, 4, 2, 4};
-  const char* attributes[] = {"a1"};
-
   // Prepare cell buffers
-  int buffer_a1[2];
-  void* buffers[] = {buffer_a1};
-  uint64_t buffer_sizes[] = {sizeof(buffer_a1)};
+  int buffer_a1[16];
+  uint64_t buffer_a2[16];
+  char buffer_var_a2[40];
+  float buffer_a3[32];
+  void* buffers[] = {buffer_a1, buffer_a2, buffer_var_a2, buffer_a3};
+  uint64_t buffer_sizes[] = {sizeof(buffer_a1),
+                             sizeof(buffer_a2),
+                             sizeof(buffer_var_a2),
+                             sizeof(buffer_a3)};
 
   // Create query
   tiledb_query_t* query;
   tiledb_query_create(
       ctx,
       &query,
-      "my_sparse_array",
+      "my_dense_array",
       TILEDB_READ,
-      TILEDB_ROW_MAJOR,
-      subarray,
-      attributes,
-      1,
+      TILEDB_GLOBAL_ORDER,
+      nullptr,
+      nullptr,
+      0,
       buffers,
       buffer_sizes);
 
-  // Loop until no overflow
-  printf(" a1\n----\n");
-  tiledb_query_status_t status;
-  do {
-    printf("Reading cells...\n");
+  // Submit query
+  tiledb_query_submit(ctx, query);
 
-    // Read from array_schema
-    tiledb_query_submit(ctx, query);
-
-    // Print cell values
-    int64_t result_num = buffer_sizes[0] / sizeof(int);
-    for (int i = 0; i < result_num; ++i) {
-      // TODO      if(buffer_a1[i] != TILEDB_EMPTY_INT32) // Check for deletion
-      printf("%3d\n", buffer_a1[i]);
-    }
-
-    // Get overflow
-    tiledb_query_get_attribute_status(ctx, query, "a1", &status);
-  } while (status == TILEDB_INCOMPLETE);
+  // Print cell values
+  uint64_t result_num = buffer_sizes[0] / sizeof(int);
+  printf("result num: %llu\n\n", result_num);
+  printf(" a1\t    a2\t   (a3.first, a3.second)\n");
+  printf("-----------------------------------------\n");
+  for (uint64_t i = 0; i < result_num; ++i) {
+    printf("%3d", buffer_a1[i]);
+    uint64_t var_size = (i != result_num - 1) ?
+                            buffer_a2[i + 1] - buffer_a2[i] :
+                            buffer_sizes[2] - buffer_a2[i];
+    printf("\t %4.*s", int(var_size), &buffer_var_a2[buffer_a2[i]]);
+    printf("\t\t (%5.1f, %5.1f)\n", buffer_a3[2 * i], buffer_a3[2 * i + 1]);
+  }
 
   // Clean up
   tiledb_query_free(ctx, query);
