@@ -318,7 +318,7 @@ FileIOLogger::log_file_io("ls on dir:" + uri.to_path());
   }
   for (int i = 0; i < numEntries; ++i) {
     auto path = std::string(fileList[i].mName);
-    if (!utils::starts_with("hdfs://", path)) {
+    if (!utils::starts_with(path, "hdfs://")) {
       path = std::string("hdfs://") + path;
     }
     paths->push_back(path);
