@@ -30,6 +30,7 @@
 #   - LZ4_FOUND, whether LZ4 has been found
 
 # Find header files  
+set(CMAKE_PREFIX_PATH /home/khandrika.1/local/lz4)
 if(LZ4_SEARCH_HEADER_PATHS)
   find_path( 
       LZ4_INCLUDE_DIR lz4.h 
@@ -44,7 +45,7 @@ endif()
 if(LZ4_SEARCH_LIB_PATH)
   find_library(
       LZ4_LIBRARIES NAMES lz4
-      PATHS ${LZ4_SEARCH_LIB_PATH}$
+      PATHS ${LZ4_SEARCH_LIB_PATH}
       NO_DEFAULT_PATH
   )
 else()

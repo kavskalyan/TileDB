@@ -47,6 +47,7 @@ namespace hdfs {
 
 #ifdef HAVE_HDFS
 Status connect(hdfsFS& fs) {
+  FileIOLogger::log_file_io("Connecting to hdfs");
   struct hdfsBuilder* builder = hdfsNewBuilder();
   if (builder == nullptr) {
     return LOG_STATUS(Status::IOError(
@@ -65,7 +66,9 @@ Status connect(hdfsFS& fs) {
 }
 
 Status disconnect(hdfsFS& fs) {
+  FileIOLogger::log_file_io("Disconnecting from hdfs");
   if (hdfsDisconnect(fs) != 0) {
+    FileIOLogger::log_file_io("Failed to disconnect from hdfs");
     return LOG_STATUS(
         Status::IOError(std::string("Failed to disconnect hdfs")));
   }
@@ -74,8 +77,10 @@ Status disconnect(hdfsFS& fs) {
 
 // remove a path (recursive)
 Status remove_path(hdfsFS fs, const URI& uri) {
+  FileIOLogger::log_file_io("Remove path:" + uri.to_path());
   int rc = hdfsDelete(fs, uri.to_path().c_str(), 1);
   if (rc < 0) {
+    FileIOLogger::log_file_io("Cannot remove path:" + uri.to_path());
     return LOG_STATUS(
         Status::IOError("Cannot remove path: " + uri.to_string()));
   }
@@ -84,13 +89,16 @@ Status remove_path(hdfsFS fs, const URI& uri) {
 
 // create a directory with the given path
 Status create_dir(hdfsFS fs, const URI& uri) {
-  if (is_dir(fs, uri)) {
+ FileIOLogger::log_file_io("Create dir: " + uri.to_path()); 
+ if (is_dir(fs, uri)) {
+    FileIOLogger::log_file_io("Directory already exists. Cannot create dir: " + uri.to_path());
     return LOG_STATUS(Status::IOError(
         std::string("Cannot create directory ") + uri.to_string() +
         "'; Directory already exists"));
   }
   int ret = hdfsCreateDirectory(fs, uri.to_path().c_str());
   if (ret < 0) {
+    FileIOLogger::log_file_io("Cannot create dir: " + uri.to_path());
     return LOG_STATUS(Status::IOError(
         std::string("Cannot create directory ") + uri.to_string()));
   }
@@ -99,8 +107,10 @@ Status create_dir(hdfsFS fs, const URI& uri) {
 
 // delete the directory with the given path
 Status delete_dir(hdfsFS fs, const URI& uri) {
+FileIOLogger::log_file_io("Delete dir: " + uri.to_path());
   int ret = hdfsDelete(fs, uri.to_path().c_str(), 1);
   if (ret < 0) {
+    FileIOLogger::log_file_io("Cannot delete dir: " + uri.to_path());
     return LOG_STATUS(Status::IOError(
         std::string("Cannot delete directory '") + uri.to_string()));
   }
@@ -108,6 +118,7 @@ Status delete_dir(hdfsFS fs, const URI& uri) {
 }
 
 Status move_path(hdfsFS fs, const URI& old_uri, const URI& new_uri) {
+FileIOLogger::log_file_io("move from uri: " + old_uri.to_path() + " to new uri: " + new_uri.to_path());
   if (hdfsExists(fs, new_uri.to_path().c_str()) == 0) {
     return LOG_STATUS(Status::IOError(
         "Cannot move path " + old_uri.to_string() + " to " +
@@ -124,6 +135,7 @@ Status move_path(hdfsFS fs, const URI& old_uri, const URI& new_uri) {
 }
 
 bool is_dir(hdfsFS fs, const URI& uri) {
+FileIOLogger::log_file_io("Is directory: " + uri.to_path());
   int exists = hdfsExists(fs, uri.to_path().c_str());
   if (exists == 0) {  // success
     hdfsFileInfo* fileInfo = hdfsGetPathInfo(fs, uri.to_path().c_str());
@@ -143,7 +155,9 @@ bool is_dir(hdfsFS fs, const URI& uri) {
 
 // Is the given path a valid file
 bool is_file(hdfsFS fs, const URI& uri) {
+FileIOLogger::log_file_io("is File: " + uri.to_path());
   int ret = hdfsExists(fs, uri.to_path().c_str());
+  std::cout<<"IsFile:"<<uri.to_path().c_str()<<std::endl;
   if (!ret) {
     hdfsFileInfo* fileInfo = hdfsGetPathInfo(fs, uri.to_path().c_str());
     if (fileInfo == NULL) {
@@ -163,6 +177,8 @@ bool is_file(hdfsFS fs, const URI& uri) {
 // create a file with the given path
 Status create_file(hdfsFS fs, const URI& uri) {
   // Open file
+  FileIOLogger::log_file_io("Create file: " + uri.to_path());
+  std::cout << "Create File:"<< uri.to_path().c_str() << std::endl;
   hdfsFile writeFile =
       hdfsOpenFile(fs, uri.to_path().c_str(), O_WRONLY, 0, 0, 0);
   if (!writeFile) {
@@ -181,6 +197,8 @@ Status create_file(hdfsFS fs, const URI& uri) {
 
 // delete a file with the given path
 Status remove_file(hdfsFS fs, const URI& uri) {
+  FileIOLogger::log_file_io("Remove file: " + uri.to_path());
+
   int ret = hdfsDelete(fs, uri.to_path().c_str(), 0);
   if (ret < 0) {
     return LOG_STATUS(
@@ -193,6 +211,7 @@ Status remove_file(hdfsFS fs, const URI& uri) {
 // allocated buffer buffer.
 Status read_from_file(
     hdfsFS fs, const URI& uri, off_t offset, void* buffer, uint64_t length) {
+  FileIOLogger::log_file_io("Read file: " + uri.to_path() + " ,Number of bytes:" + std::to_string(length));
   hdfsFile readFile =
       hdfsOpenFile(fs, uri.to_path().c_str(), O_RDONLY, length, 0, 0);
   if (!readFile) {
@@ -230,6 +249,7 @@ Status read_from_file(
 
 Status read_from_file(hdfsFS fs, const URI& uri, Buffer** buff) {
   // get the file size
+FileIOLogger::log_file_io("Read file: " + uri.to_path());
   uint64_t nbytes = 0;
   RETURN_NOT_OK(file_size(fs, uri, &nbytes));
   // create a new buffer
@@ -248,6 +268,7 @@ Status read_from_file(hdfsFS fs, const URI& uri, Buffer** buff) {
 // Write length bytes of buffer to a given path
 Status write_to_file(
     hdfsFS fs, const URI& uri, const void* buffer, const uint64_t length) {
+  FileIOLogger::log_file_io("Write to file: " + uri.to_path() + " ,Number of bytes:" + std::to_string(length));
   int flags = is_file(fs, uri) ? O_WRONLY | O_APPEND : O_WRONLY;
   hdfsFile writeFile = hdfsOpenFile(
       fs, uri.to_path().c_str(), flags, constants::max_write_bytes, 0, 0);
@@ -285,6 +306,7 @@ Status write_to_file(
 
 // List all subdirectories and files for a given path, appending them to paths.
 Status ls(hdfsFS fs, const URI& uri, std::vector<std::string>* paths) {
+FileIOLogger::log_file_io("ls on dir:" + uri.to_path());
   int numEntries = 0;
   hdfsFileInfo* fileList =
       hdfsListDirectory(fs, uri.to_path().c_str(), &numEntries);
@@ -307,6 +329,7 @@ Status ls(hdfsFS fs, const URI& uri, std::vector<std::string>* paths) {
 
 // File size in bytes for a given path
 Status file_size(hdfsFS fs, const URI& uri, uint64_t* nbytes) {
+  FileIOLogger::log_file_io("File size: " + uri.to_path());
   hdfsFileInfo* fileInfo = hdfsGetPathInfo(fs, uri.to_path().c_str());
   if (fileInfo == NULL) {
     return LOG_STATUS(
@@ -326,6 +349,7 @@ Status file_size(hdfsFS fs, const URI& uri, uint64_t* nbytes) {
 #endif
 
 Status put_path(const URI& fs_path, const URI& hdfs_path) {
+  FileIOLogger::log_file_io("Put path" + hdfs_path.to_path());
   std::string cmd = std::string("hadoop fs -put ") + fs_path.to_path() + " " +
                     hdfs_path.to_string();
   int rc = system(cmd.c_str());
@@ -338,6 +362,7 @@ Status put_path(const URI& fs_path, const URI& hdfs_path) {
 }
 
 Status get_path(const URI& hdfs_path, const URI& fs_path) {
+  FileIOLogger::log_file_io("Get path" + hdfs_path.to_path());
   std::string cmd = std::string("hadoop fs -get ") + hdfs_path.to_string() +
                     " " + fs_path.to_path();
   int rc = system(cmd.c_str());

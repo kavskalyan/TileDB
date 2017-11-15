@@ -30,6 +30,7 @@
 #   - ZSTD_FOUND, whether Zstandard has been found
 
 # Find header files  
+set(CMAKE_PREFIX_PATH /home/khandrika.1/local/zstd)
 if(ZSTD_SEARCH_HEADER_PATHS)
   find_path( 
       ZSTD_INCLUDE_DIR zstd.h 
@@ -44,7 +45,7 @@ endif()
 if(ZSTD_SEARCH_LIB_PATH)
   find_library(
       ZSTD_LIBRARIES NAMES zstd
-      PATHS ${ZSTD_SEARCH_LIB_PATH}$
+      PATHS ${ZSTD_SEARCH_LIB_PATH}
       NO_DEFAULT_PATH
   )
 else()

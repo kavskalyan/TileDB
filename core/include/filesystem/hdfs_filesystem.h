@@ -36,7 +36,7 @@
 #include <sys/types.h>
 #include <string>
 #include <vector>
-
+#include <iostream>
 #include "buffer.h"
 #include "status.h"
 #include "uri.h"
@@ -44,7 +44,12 @@
 #ifdef HAVE_HDFS
 #include "hdfs.h"
 #endif
-
+class FileIOLogger{
+ public:
+  static inline void log_file_io(const std::string log){
+    std::cout << log << std::endl;
+  }
+};
 namespace tiledb {
 
 namespace hdfs {

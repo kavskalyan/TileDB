@@ -30,6 +30,7 @@
 #   - BLOSC_FOUND, whether Blosc has been found
 
 # Find header files  
+set(CMAKE_PREFIX_PATH /home/khandrika.1/local/blosc)
 if(BLOSC_SEARCH_HEADER_PATHS)
   find_path( 
       BLOSC_INCLUDE_DIR blosc.h 
@@ -44,7 +45,7 @@ endif()
 if(BLOSC_SEARCH_LIB_PATH)
   find_library(
       BLOSC_LIBRARIES NAMES blosc
-      PATHS ${BLOSC_SEARCH_LIB_PATH}$
+      PATHS ${BLOSC_SEARCH_LIB_PATH}
       NO_DEFAULT_PATH
   )
 else()
